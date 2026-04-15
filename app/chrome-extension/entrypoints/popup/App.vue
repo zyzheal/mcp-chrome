@@ -8,101 +8,6 @@
         </div>
       </div>
       <div class="content">
-        <!-- 服务配置卡片 -->
-        <div class="section">
-          <h2 class="section-title">{{ getMessage('nativeServerConfigLabel') }}</h2>
-          <div class="config-card">
-            <div class="status-section">
-              <div class="status-header">
-                <p class="status-label">{{ getMessage('runningStatusLabel') }}</p>
-                <button
-                  class="refresh-status-button"
-                  @click="refreshServerStatus"
-                  :title="getMessage('refreshStatusButton')"
-                >
-                  <RefreshIcon className="icon-small" />
-                </button>
-              </div>
-              <div class="status-info">
-                <span :class="['status-dot', getStatusClass()]"></span>
-                <span class="status-text">{{ getStatusText() }}</span>
-              </div>
-              <div v-if="serverStatus.lastUpdated" class="status-timestamp">
-                {{ getMessage('lastUpdatedLabel') }}
-                {{ new Date(serverStatus.lastUpdated).toLocaleTimeString() }}
-              </div>
-            </div>
-
-            <div v-if="showMcpConfig" class="mcp-config-section">
-              <div class="mcp-config-header">
-                <p class="mcp-config-label">{{ getMessage('mcpServerConfigLabel') }}</p>
-                <button class="copy-config-button" @click="copyMcpConfig">
-                  {{ copyButtonText }}
-                </button>
-              </div>
-              <div class="mcp-config-content">
-                <pre class="mcp-config-json">{{ mcpConfigJson }}</pre>
-              </div>
-            </div>
-            <div class="port-section">
-              <label for="port" class="port-label">{{ getMessage('connectionPortLabel') }}</label>
-              <input
-                type="text"
-                id="port"
-                :value="nativeServerPort"
-                @input="updatePort"
-                class="port-input"
-              />
-            </div>
-
-            <button class="connect-button" :disabled="isConnecting" @click="testNativeConnection">
-              <BoltIcon />
-              <span>{{
-                isConnecting
-                  ? getMessage('connectingStatus')
-                  : nativeConnectionStatus === 'connected'
-                    ? getMessage('disconnectButton')
-                    : getMessage('connectButton')
-              }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- 快捷工具卡片 -->
-        <div class="section">
-          <h2 class="section-title">快捷工具</h2>
-          <div class="rr-icon-buttons">
-            <button
-              class="rr-icon-btn rr-icon-btn-record rr-icon-btn-coming-soon has-tooltip"
-              @click="startRecording"
-              data-tooltip="录制功能开发中"
-            >
-              <RecordIcon :recording="false" />
-            </button>
-            <button
-              class="rr-icon-btn rr-icon-btn-stop rr-icon-btn-coming-soon has-tooltip"
-              @click="stopRecording"
-              data-tooltip="录制功能开发中"
-            >
-              <StopIcon />
-            </button>
-            <button
-              class="rr-icon-btn rr-icon-btn-edit has-tooltip"
-              @click="toggleWebEditor"
-              data-tooltip="开启页面编辑模式"
-            >
-              <EditIcon />
-            </button>
-            <button
-              class="rr-icon-btn rr-icon-btn-marker has-tooltip"
-              @click="toggleElementMarker"
-              data-tooltip="开启元素标注"
-            >
-              <MarkerIcon />
-            </button>
-          </div>
-        </div>
-
         <!-- 管理入口卡片 -->
         <div class="section">
           <h2 class="section-title">管理入口</h2>
@@ -228,6 +133,101 @@
               >
                 <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
               </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- 快捷工具卡片 -->
+        <div class="section">
+          <h2 class="section-title">快捷工具</h2>
+          <div class="rr-icon-buttons">
+            <button
+              class="rr-icon-btn rr-icon-btn-record rr-icon-btn-coming-soon has-tooltip"
+              @click="startRecording"
+              data-tooltip="录制功能开发中"
+            >
+              <RecordIcon :recording="false" />
+            </button>
+            <button
+              class="rr-icon-btn rr-icon-btn-stop rr-icon-btn-coming-soon has-tooltip"
+              @click="stopRecording"
+              data-tooltip="录制功能开发中"
+            >
+              <StopIcon />
+            </button>
+            <button
+              class="rr-icon-btn rr-icon-btn-edit has-tooltip"
+              @click="toggleWebEditor"
+              data-tooltip="开启页面编辑模式"
+            >
+              <EditIcon />
+            </button>
+            <button
+              class="rr-icon-btn rr-icon-btn-marker has-tooltip"
+              @click="toggleElementMarker"
+              data-tooltip="开启元素标注"
+            >
+              <MarkerIcon />
+            </button>
+          </div>
+        </div>
+
+        <!-- 服务配置卡片 -->
+        <div class="section">
+          <h2 class="section-title">{{ getMessage('nativeServerConfigLabel') }}</h2>
+          <div class="config-card">
+            <div class="status-section">
+              <div class="status-header">
+                <p class="status-label">{{ getMessage('runningStatusLabel') }}</p>
+                <button
+                  class="refresh-status-button"
+                  @click="refreshServerStatus"
+                  :title="getMessage('refreshStatusButton')"
+                >
+                  <RefreshIcon className="icon-small" />
+                </button>
+              </div>
+              <div class="status-info">
+                <span :class="['status-dot', getStatusClass()]"></span>
+                <span class="status-text">{{ getStatusText() }}</span>
+              </div>
+              <div v-if="serverStatus.lastUpdated" class="status-timestamp">
+                {{ getMessage('lastUpdatedLabel') }}
+                {{ new Date(serverStatus.lastUpdated).toLocaleTimeString() }}
+              </div>
+            </div>
+
+            <div v-if="showMcpConfig" class="mcp-config-section">
+              <div class="mcp-config-header">
+                <p class="mcp-config-label">{{ getMessage('mcpServerConfigLabel') }}</p>
+                <button class="copy-config-button" @click="copyMcpConfig">
+                  {{ copyButtonText }}
+                </button>
+              </div>
+              <div class="mcp-config-content">
+                <pre class="mcp-config-json">{{ mcpConfigJson }}</pre>
+              </div>
+            </div>
+            <div class="port-section">
+              <label for="port" class="port-label">{{ getMessage('connectionPortLabel') }}</label>
+              <input
+                type="text"
+                id="port"
+                :value="nativeServerPort"
+                @input="updatePort"
+                class="port-input"
+              />
+            </div>
+
+            <button class="connect-button" :disabled="isConnecting" @click="testNativeConnection">
+              <BoltIcon />
+              <span>{{
+                isConnecting
+                  ? getMessage('connectingStatus')
+                  : nativeConnectionStatus === 'connected'
+                    ? getMessage('disconnectButton')
+                    : getMessage('connectButton')
+              }}</span>
             </button>
           </div>
         </div>
