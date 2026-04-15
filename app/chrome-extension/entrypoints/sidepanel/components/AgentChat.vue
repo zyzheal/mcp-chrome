@@ -15,16 +15,18 @@
         @session:delete="handleDeleteSession"
         @session:rename="handleRenameSession"
         @session:open-project="handleSessionOpenProject"
+        @open:settings="handleOpenAISettings"
+        @back:home="handleBackHome"
       />
     </template>
 
     <!-- Chat Conversation View -->
     <template v-else>
       <AgentChatShell
-        :error-message="chat.errorMessage.value"
-        :usage="chat.lastUsage.value"
-        :footer-label="`${engineDisplayName} Preview`"
-        @error:dismiss="chat.errorMessage.value = null"
+        :error-message="activeChat.errorMessage.value"
+        :usage="activeChat.lastUsage.value"
+        :footer-label="useDirectOpenAI ? 'OpenAI' : `${engineDisplayName} Preview`"
+        @error:dismiss="activeChat.errorMessage.value = null"
       >
         <!-- Header -->
         <template #header>
@@ -53,26 +55,26 @@
           <WebEditorChanges />
 
           <AgentComposer
-            :model-value="chat.input.value"
+            :model-value="activeChat.input.value"
             :attachments="attachments.attachments.value"
             :attachment-error="attachments.error.value"
             :is-drag-over="attachments.isDragOver.value"
-            :is-streaming="chat.isStreaming.value"
-            :request-state="chat.requestState.value"
-            :sending="chat.sending.value"
-            :cancelling="chat.cancelling.value"
-            :can-cancel="!!chat.currentRequestId.value"
-            :can-send="chat.canSend.value"
-            placeholder="Ask Claude to write code..."
+            :is-streaming="activeChat.isStreaming.value"
+            :request-state="activeChat.requestState.value"
+            :sending="activeChat.sending.value"
+            :cancelling="activeChat.cancelling.value"
+            :can-cancel="!!activeChat.currentRequestId.value"
+            :can-send="activeChat.canSend.value"
+            :placeholder="useDirectOpenAI ? 'Ask AI...' : 'Ask Claude to write code...'"
             :engine-name="currentEngineName"
             :selected-model="currentSessionModel"
             :available-models="currentAvailableModels"
             :reasoning-effort="currentReasoningEffort"
             :available-reasoning-efforts="currentAvailableReasoningEfforts"
             :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
-            @update:model-value="chat.input.value = $event"
+            @update:model-value="activeChat.input.value = $event"
             @submit="handleSend"
-            @cancel="chat.cancelCurrentRequest()"
+            @cancel="activeChat.cancelCurrentRequest()"
             @attachment:add="handleAttachmentAdd"
             @attachment:remove="attachments.removeAttachment"
             @attachment:drop="attachments.handleDrop"
@@ -140,6 +142,7 @@
       @reconnect="handleReconnect"
       @attachments:open="handleOpenAttachmentCache"
       @fake-caret:toggle="handleFakeCaretToggle"
+      @openai:settings="handleOpenAISettings"
     />
 
     <AgentOpenProjectMenu
@@ -173,8 +176,8 @@ import type { AgentStoredMessage, AgentMessage, CodexReasoningEffort } from 'chr
 import {
   useAgentServer,
   useAgentChat,
-  useAgentProjects,
-  useAgentSessions,
+  useOpenAIChat,
+  useStandaloneAgent,
   useAttachments,
   useAgentTheme,
   useAgentThreads,
@@ -212,6 +215,12 @@ import {
   getDefaultModelForCli,
 } from '@/common/agent-models';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+
+// Emits
+const emit = defineEmits<{
+  'navigate:settings': [];
+  'back:home': [];
+}>();
 
 // Local UI state
 const selectedCli = ref('');
@@ -257,6 +266,9 @@ const sessionMenuOpen = ref(false);
 const settingsMenuOpen = ref(false);
 const openProjectMenuOpen = ref(false);
 
+// Track if sessions have been synced to server (to avoid duplicate syncs)
+const sessionsSyncedToServer = ref(false);
+
 // Open project context: which session/project to open when menu selects
 const openProjectContext = ref<{ type: 'session' | 'project'; id: string } | null>(null);
 
@@ -269,39 +281,16 @@ const currentManagementInfo = ref<import('chrome-mcp-shared').AgentManagementInf
 // Attachment cache panel state
 const attachmentCacheOpen = ref(false);
 
-// Initialize composables - sessions must be declared first for sessionId access
-const sessions = useAgentSessions({
-  getServerPort: () => server.serverPort.value,
-  ensureServer: () => server.ensureNativeServer(),
-  onSessionChanged: (sessionId: string) => {
-    // Guard against stale callbacks from concurrent session switches
-    // This prevents race conditions where an older switch completes after a newer one
-    if (sessionId !== sessions.selectedSessionId.value) {
-      return;
-    }
+// Initialize composables - use standalone agent for project/session management (no server dependency)
+const agent = useStandaloneAgent();
 
-    // Always clear request state when session changes, regardless of view
-    // This prevents stale cancel targets and running badges from carrying over
-    chat.currentRequestId.value = null;
-    chat.isStreaming.value = false;
-    chat.requestState.value = 'idle';
-
-    // Always sync URL when session changes (for all paths: delete, project switch, etc.)
-    // This ensures URL stays consistent for refresh/deep-link scenarios
-    viewRoute.setSessionId(sessionId);
-
-    // Only reconnect SSE and reload history if we're in chat view
-    // This prevents duplicate connections when switching sessions from the list
-    // The list->chat navigation handlers will open SSE themselves
-    if (viewRoute.isChatView.value && projects.selectedProjectId.value) {
-      server.openEventSource();
-      void loadSessionHistory(sessionId);
-    }
-  },
-});
+// Server and chat composables (only used when server is available for AI chat)
+// =============================================================================
+// Chat: Server-based (native server)
+// =============================================================================
 
 const server = useAgentServer({
-  getSessionId: () => sessions.selectedSessionId.value,
+  getSessionId: () => agent.selectedSessionId.value,
   onMessage: (event) => chat.handleRealtimeEvent(event),
   onError: (error) => {
     chat.errorMessage.value = error;
@@ -310,18 +299,64 @@ const server = useAgentServer({
 
 const chat = useAgentChat({
   getServerPort: () => server.serverPort.value,
-  getSessionId: () => sessions.selectedSessionId.value,
+  getSessionId: () => agent.selectedSessionId.value,
   ensureServer: () => server.ensureNativeServer(),
   openEventSource: () => server.openEventSource(),
 });
 
-const projects = useAgentProjects({
-  getServerPort: () => server.serverPort.value,
-  ensureServer: () => server.ensureNativeServer(),
-  onHistoryLoaded: (messages: AgentStoredMessage[]) => {
-    const converted = convertStoredMessages(messages);
-    chat.setMessages(converted);
+// =============================================================================
+// Chat: Standalone OpenAI (direct API, no native server)
+// =============================================================================
+
+const openaiChat = useOpenAIChat({
+  getConfig: getSavedOpenAIConfig,
+  getSessionId: () => agent.selectedSessionId.value,
+  persistMessage: (msg) => {
+    // Persist messages via standalone agent's storage
+    agent.addChatMessage(msg);
   },
+  loadSessionHistory: async () => {
+    const stored = agent.getChatMessages();
+    const sessionId = agent.selectedSessionId.value;
+    return stored
+      .filter((m) => m.sessionId === sessionId)
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  },
+});
+
+// =============================================================================
+// Determine which chat mode to use
+// =============================================================================
+
+/**
+ * Whether to use direct OpenAI API (no native server).
+ * Only use direct mode when:
+ * 1. OpenAI config exists and is enabled, AND
+ * 2. Server is not ready (neither via Native Messaging nor HTTP)
+ */
+const useDirectOpenAI = computed(() => {
+  const config = getSavedOpenAIConfig();
+  // If no OpenAI config or disabled, use MCP mode (default)
+  if (!config) return false;
+  if (!config.enabled) return false;
+  // If server is ready (via Native Messaging or HTTP), use MCP mode
+  if (server.isServerReady.value) return false;
+  // Server not ready - use direct OpenAI API
+  return true;
+});
+
+/**
+ * Active chat composable - switches between server-based and direct OpenAI.
+ */
+const activeChat = computed(() => {
+  return useDirectOpenAI.value ? openaiChat : chat;
+});
+
+// Alias standalone state to match existing code patterns
+const projects = agent;
+const sessions = agent;
+const projectsMap = computed(() => {
+  return new Map(projects.projects.value.map((p) => [p.id, p] as const));
 });
 
 const attachments = useAttachments();
@@ -355,16 +390,16 @@ const runningSessionIds = computed(() => {
   return new Set<string>();
 });
 
-// Map of projectId -> AgentProject for looking up project info in sessions list
-const projectsMap = computed(() => {
-  return new Map(projects.projects.value.map((p) => [p.id, p] as const));
-});
-
 // Thread state for grouping messages
+// Use a computed that switches between chat and openaiChat based on active mode
+const threadMessages = computed(() => activeChat.value.messages.value);
+const threadRequestState = computed(() => activeChat.value.requestState.value);
+const threadCurrentRequestId = computed(() => activeChat.value.currentRequestId.value);
+
 const threadState = useAgentThreads({
-  messages: chat.messages,
-  requestState: chat.requestState,
-  currentRequestId: chat.currentRequestId,
+  messages: threadMessages,
+  requestState: threadRequestState,
+  currentRequestId: threadCurrentRequestId,
 });
 
 // Computed values
@@ -381,6 +416,8 @@ const sessionLabel = computed(() => {
 
 const connectionState = computed(() => {
   if (server.isServerReady.value) return 'ready';
+  const openaiConfig = getSavedOpenAIConfig();
+  if (openaiConfig !== null && openaiConfig.enabled) return 'ready'; // OpenAI config is available and enabled
   if (server.nativeConnected.value) return 'connecting';
   return 'disconnected';
 });
@@ -503,9 +540,13 @@ function convertStoredMessages(stored: AgentStoredMessage[]): AgentMessage[] {
  * Prevents stale cancel targets and running badges from carrying over.
  */
 function clearRequestState(): void {
+  // Clear both chat providers to handle mode switching
   chat.currentRequestId.value = null;
   chat.isStreaming.value = false;
   chat.requestState.value = 'idle';
+  openaiChat.currentRequestId.value = null;
+  openaiChat.isStreaming.value = false;
+  openaiChat.requestState.value = 'idle';
 }
 
 // Menu handlers
@@ -645,6 +686,12 @@ function handleCloseAttachmentCache(): void {
   attachmentCacheOpen.value = false;
 }
 
+// OpenAI Settings handler - navigate to settings tab
+function handleOpenAISettings(): void {
+  closeMenus();
+  emit('navigate:settings');
+}
+
 // Session handlers
 async function handleSessionSelect(sessionId: string): Promise<void> {
   await sessions.selectSession(sessionId);
@@ -654,7 +701,10 @@ async function handleSessionSelect(sessionId: string): Promise<void> {
 
 async function handleNewSession(): Promise<void> {
   const projectId = projects.selectedProjectId.value;
-  if (!projectId) return;
+  if (!projectId) {
+    console.error('[AgentChat] No project selected, cannot create session');
+    return;
+  }
 
   // Clear previous request state (in chat view, creating new session should reset state)
   clearRequestState();
@@ -830,13 +880,33 @@ async function handleProjectSelect(projectId: string): Promise<void> {
     useCcr.value = project.useCcr ?? false;
     enableChromeMcp.value = project.enableChromeMcp !== false;
   }
-  // Load sessions for the new project
-  await sessions.ensureDefaultSession(
-    projectId,
-    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
-  );
 
-  // Guard again after ensureDefaultSession
+  // Fetch sessions for the new project from storage
+  // ensureDefaultSession will handle restoring from storage if sessions exist
+  await sessions.fetchSessions(projectId);
+
+  // Only ensure default session if no sessions were found
+  if (sessions.sessions.value.length === 0) {
+    console.log(
+      '[AgentChat.handleProjectSelect] No sessions found for new project, ensuring default...',
+    );
+    await sessions.ensureDefaultSession(
+      projectId,
+      (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
+    );
+  } else {
+    console.log(
+      '[AgentChat.handleProjectSelect] Found',
+      sessions.sessions.value.length,
+      'sessions for project, selecting first',
+    );
+    // Select first session if none selected
+    if (!sessions.selectedSessionId.value && sessions.sessions.value.length > 0) {
+      await sessions.selectSession(sessions.sessions.value[0].id);
+    }
+  }
+
+  // Guard again after session handling
   if (projects.selectedProjectId.value !== projectId) {
     closeMenus();
     return;
@@ -864,10 +934,24 @@ async function handleNewProject(): Promise<void> {
         useCcr.value = project.useCcr ?? false;
         enableChromeMcp.value = project.enableChromeMcp !== false;
 
-        // Ensure a default session exists for the new project
-        const engineName =
-          (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
-        await sessions.ensureDefaultSession(project.id, engineName);
+        // Fetch sessions for the new project first
+        await sessions.fetchSessions(project.id);
+
+        // Only create default session if none exist
+        if (sessions.sessions.value.length === 0) {
+          console.log(
+            '[AgentChat.handleNewProject] No sessions found for new project, creating default...',
+          );
+          const engineName =
+            (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+          await sessions.ensureDefaultSession(project.id, engineName);
+        } else {
+          console.log(
+            '[AgentChat.handleNewProject] Found',
+            sessions.sessions.value.length,
+            'sessions for new project',
+          );
+        }
 
         // Reconnect SSE and load session history
         if (sessions.selectedSessionId.value) {
@@ -943,6 +1027,52 @@ async function handleSaveSettings(): Promise<void> {
 // =============================================================================
 
 /**
+ * Get the current OpenAI-compatible config from localStorage.
+ * Returns null if not configured.
+ */
+function getSavedOpenAIConfig(): {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  enabled: boolean;
+} | null {
+  try {
+    const saved = localStorage.getItem('openai_config');
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.baseUrl && data.apiKey) {
+        return {
+          baseUrl: data.baseUrl,
+          apiKey: data.apiKey,
+          model: data.model || 'gpt-4o',
+          enabled: data.enabled ?? true,
+        };
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
+/**
+ * Derive provider display name from baseUrl.
+ */
+function getProviderDisplayName(baseUrl: string): string {
+  const url = baseUrl.toLowerCase();
+  if (url.includes('dashscope') || url.includes('aliyun')) return '阿里云百炼';
+  if (url.includes('openai.azure.com')) return 'Azure OpenAI';
+  if (url.includes('localhost') || url.includes('127.0.0.1') || url.includes('11434'))
+    return 'Ollama 本地';
+  if (url.includes('api.openai.com')) return 'OpenAI 官方';
+  if (url.includes('dashscope')) return '通义千问';
+  if (url.includes('bigmodel') || url.includes('zhipu')) return '智谱';
+  if (url.includes('moonshot') || url.includes('kimi')) return 'Kimi';
+  if (url.includes('minimax')) return 'MiniMax';
+  return '自定义';
+}
+
+/**
  * Handle session selection from sessions list and navigate to chat view.
  * Supports cross-project selection: if the selected session belongs to a different
  * project, the project context will be switched automatically.
@@ -1005,22 +1135,70 @@ async function handleSessionSelectAndNavigate(sessionId: string): Promise<void> 
 
   viewRoute.goToChat(sessionId);
 
-  // Open SSE and load history when entering chat view
-  server.openEventSource();
+  // Open SSE only if native server is available; load history regardless
+  if (server.isServerReady.value) {
+    server.openEventSource();
+  }
   await loadSessionHistory(sessionId);
+}
+
+/**
+ * Derive engine name from OpenAI config baseUrl.
+ * Used to display the correct engine badge in the session list.
+ */
+function getEngineNameFromConfig(baseUrl: string): string {
+  const url = baseUrl.toLowerCase();
+  if (url.includes('dashscope') || url.includes('aliyun')) return 'qwen';
+  if (url.includes('bigmodel') || url.includes('zhipu')) return 'glm';
+  if (url.includes('moonshot') || url.includes('kimi')) return 'kimi';
+  if (url.includes('minimax')) return 'minimax';
+  if (url.includes('openai.azure.com')) return 'claude';
+  return 'claude'; // Default: use claude for unknown providers
 }
 
 /**
  * Create a new session and navigate to chat view.
  */
 async function handleNewSessionAndNavigate(): Promise<void> {
-  if (!projects.selectedProjectId.value) return;
+  console.log('[AgentChat] handleNewSessionAndNavigate called');
+
+  // If no project selected, try to ensure one exists
+  if (!projects.selectedProjectId.value) {
+    console.log('[AgentChat] No project selected, attempting to ensure default project...');
+    if (projects.projects.value.length === 0) {
+      await projects.ensureDefaultProject();
+      await projects.fetchProjects();
+    }
+    if (!projects.selectedProjectId.value && projects.projects.value.length > 0) {
+      projects.selectedProjectId.value = projects.projects.value[0].id;
+      await projects.saveSelectedProjectId();
+    }
+    if (!projects.selectedProjectId.value) {
+      console.error('[AgentChat] Still no project after attempt to create one');
+      sessions.sessionError.value = 'No project selected. Please wait for server to be ready.';
+      return;
+    }
+  }
+
+  // Check OpenAI-compatible configuration (optional, can use Native Server instead)
+  const openAIConfig = getSavedOpenAIConfig();
+
+  console.log('[AgentChat] Creating session with config:', {
+    provider: openAIConfig ? getProviderDisplayName(openAIConfig.baseUrl) : 'Native Server',
+    model: openAIConfig?.model || 'default',
+    engineName: openAIConfig?.enabled
+      ? getEngineNameFromConfig(openAIConfig.baseUrl)
+      : selectedCli.value,
+  });
 
   // Clear previous state before creating new session
   clearRequestState();
 
-  const engineName =
-    (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude';
+  // Use engine name derived from config when OpenAI is enabled, otherwise use selected CLI
+  const engineName = openAIConfig?.enabled
+    ? getEngineNameFromConfig(openAIConfig.baseUrl)
+    : (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm' | 'kimi' | 'minimax') ||
+      'claude';
   const optionsConfig =
     engineName === 'codex'
       ? {
@@ -1032,17 +1210,27 @@ async function handleNewSessionAndNavigate(): Promise<void> {
 
   const session = await sessions.createSession(projects.selectedProjectId.value, {
     engineName,
+    model: openAIConfig?.model || undefined,
     name: `Session ${sessions.sessions.value.length + 1}`,
     optionsConfig,
   });
+  console.log(
+    '[AgentChat] createSession result:',
+    session ? session.id : 'null',
+    'error:',
+    sessions.sessionError.value,
+  );
 
   // Guard against stale navigation if user switched during createSession await
   if (session && sessions.selectedSessionId.value === session.id) {
     chat.setMessages([]);
+    openaiChat.clearMessages();
     viewRoute.goToChat(session.id);
 
-    // Open SSE for new session
-    server.openEventSource();
+    // Only open SSE if native server is available (skip for direct OpenAI mode)
+    if (server.isServerReady.value) {
+      server.openEventSource();
+    }
   }
 }
 
@@ -1051,6 +1239,13 @@ async function handleNewSessionAndNavigate(): Promise<void> {
  */
 function handleBackToSessions(): void {
   viewRoute.goToSessions();
+}
+
+/**
+ * Navigate back to main extension page (workflows tab).
+ */
+function handleBackHome(): void {
+  emit('back:home');
 }
 
 // =============================================================================
@@ -1136,11 +1331,33 @@ function handleAttachmentAdd(): void {
 async function handleSend(): Promise<void> {
   const dbSessionId = sessions.selectedSessionId.value;
   if (!dbSessionId) {
-    chat.errorMessage.value = 'No session selected.';
+    activeChat.value.errorMessage.value = 'No session selected.';
     return;
   }
 
-  // Capture input before clearing for preview update
+  // If using direct OpenAI mode, send without server-dependent features
+  if (useDirectOpenAI.value) {
+    const messageText = openaiChat.input.value.trim();
+    if (!messageText) return;
+
+    // Selection context not supported in direct OpenAI mode
+    await openaiChat.send({
+      dbSessionId,
+    });
+
+    // Update session preview with first user message
+    sessions.updateSessionPreview(dbSessionId, messageText);
+    return;
+  }
+
+  // Native server mode - full feature support
+  // Ensure session is synced to server before sending
+  const sessionSynced = await sessions.ensureSessionSynced(dbSessionId);
+  if (!sessionSynced) {
+    chat.errorMessage.value = 'Failed to sync session to server. Please try refreshing the page.';
+    return;
+  }
+
   const messageText = chat.input.value.trim();
   if (!messageText) return;
 
@@ -1280,6 +1497,8 @@ function clearLocalSelectionState(expectedTabId: number, expectedElementKey: str
 
 // Initialize
 onMounted(async () => {
+  console.log('[AgentChat.onMounted] Starting initialization...');
+
   // Initialize theme
   await themeState.initTheme();
 
@@ -1289,97 +1508,196 @@ onMounted(async () => {
   // Load input preferences (fake caret, etc.)
   await inputPreferences.init();
 
-  // Initialize server
-  await server.initialize();
+  // CRITICAL INITIALIZATION ORDER:
+  // 1. First load projects from storage
+  // 2. Then load selected project ID from storage (MUST happen before ensureDefaultProject)
+  // 3. Then ensure default project exists (won't overwrite if already loaded)
+  // 4. Then load sessions from storage
+  // 5. Finally ensure default session exists (won't create if already exists)
 
-  if (server.isServerReady.value) {
-    // Ensure default project exists and load projects
-    await projects.ensureDefaultProject();
-    await projects.fetchProjects();
+  // Step 1: Load projects from storage
+  console.log('[AgentChat.onMounted] Step 1: Loading projects...');
+  await projects.fetchProjects();
 
-    // Load all sessions across all projects for the global sessions list view
-    await sessions.fetchAllSessions();
+  // Step 2: Load selected project ID from storage (skipIfSet=false to always load)
+  console.log('[AgentChat.onMounted] Step 2: Loading selected project ID...');
+  await projects.loadSelectedProjectId(false);
 
-    // Load selected project or use first one
-    await projects.loadSelectedProjectId();
-    const hasValidSelection =
-      projects.selectedProjectId.value &&
-      projects.projects.value.some((p) => p.id === projects.selectedProjectId.value);
+  // Step 3: Ensure default project exists (won't create if projects already exist)
+  console.log('[AgentChat.onMounted] Step 3: Ensuring default project...');
+  await projects.ensureDefaultProject();
+  console.log(
+    '[AgentChat.onMounted] After ensureDefaultProject, selectedProjectId:',
+    projects.selectedProjectId.value,
+  );
 
-    if (!hasValidSelection && projects.projects.value.length > 0) {
-      projects.selectedProjectId.value = projects.projects.value[0].id;
-      await projects.saveSelectedProjectId();
+  // Step 3.5: Clean up orphan sessions (sessions whose project no longer exists)
+  console.log('[AgentChat.onMounted] Step 3.5: Cleaning up orphan sessions...');
+  await sessions.cleanupOrphanSessions();
+
+  // Step 4: Load all sessions from storage
+  console.log('[AgentChat.onMounted] Step 4: Loading all sessions...');
+  await sessions.fetchAllSessions();
+  console.log(
+    '[AgentChat.onMounted] After fetchAllSessions, allSessions.count:',
+    sessions.allSessions.value.length,
+  );
+
+  // Step 5: Load selected session ID from storage
+  console.log('[AgentChat.onMounted] Step 5: Loading selected session ID...');
+  await sessions.loadSelectedSessionId();
+
+  // Validate project selection
+  const hasValidSelection =
+    projects.selectedProjectId.value &&
+    projects.projects.value.some((p) => p.id === projects.selectedProjectId.value);
+
+  if (!hasValidSelection && projects.projects.value.length > 0) {
+    console.warn('[AgentChat] Selected project no longer exists, falling back to first project');
+    projects.selectedProjectId.value = projects.projects.value[0].id;
+    await projects.saveSelectedProjectId();
+  }
+
+  // Load settings and sessions for the current project
+  if (projects.selectedProjectId.value) {
+    const project = projects.selectedProject.value;
+    if (project) {
+      selectedCli.value = project.preferredCli ?? '';
+      model.value = project.selectedModel ?? '';
+      useCcr.value = project.useCcr ?? false;
+      enableChromeMcp.value = project.enableChromeMcp !== false;
     }
 
-    // Load settings and sessions
-    if (projects.selectedProjectId.value) {
-      const project = projects.selectedProject.value;
-      if (project) {
-        selectedCli.value = project.preferredCli ?? '';
-        model.value = project.selectedModel ?? '';
-        useCcr.value = project.useCcr ?? false;
-        enableChromeMcp.value = project.enableChromeMcp !== false;
+    // CRITICAL: Fetch sessions for the current project BEFORE ensureDefaultSession
+    // This prevents ensureDefaultSession from creating duplicate default sessions
+    console.log(
+      '[AgentChat] Step 6: Fetching sessions for project:',
+      projects.selectedProjectId.value,
+    );
+    console.log(
+      '[AgentChat] Before fetchSessions, sessions.value.length:',
+      sessions.sessions.value.length,
+    );
+    console.log(
+      '[AgentChat] Before fetchSessions, allSessions.value.length:',
+      sessions.allSessions.value.length,
+    );
+    console.log('[AgentChat] Current projectId:', projects.selectedProjectId.value);
+    await sessions.fetchSessions(projects.selectedProjectId.value);
+    console.log(
+      '[AgentChat] After fetchSessions, sessions.value.length:',
+      sessions.sessions.value.length,
+    );
+    console.log(
+      '[AgentChat] After fetchSessions, sessions.value:',
+      sessions.sessions.value.map((s) => ({ id: s.id, projectId: s.projectId, name: s.name })),
+    );
+
+    // Additional check: if sessions.value is still empty, check storage directly
+    if (sessions.sessions.value.length === 0) {
+      const stored = await chrome.storage.local.get('standalone-sessions');
+      const storedSessions = stored['standalone-sessions'] || [];
+      console.log(
+        '[AgentChat] Storage check - all stored sessions:',
+        storedSessions.map((s) => ({ id: s.id, projectId: s.projectId, name: s.name })),
+      );
+      console.log(
+        '[AgentChat] Storage check - sessions for current project:',
+        storedSessions
+          .filter((s) => s.projectId === projects.selectedProjectId.value)
+          .map((s) => ({ id: s.id, projectId: s.projectId, name: s.name })),
+      );
+    }
+
+    // Parse URL parameters to determine initial view
+    const initialRoute = viewRoute.initFromUrl();
+
+    // Handle deep link: URL specifies session to open directly
+    if (initialRoute.view === 'chat' && initialRoute.sessionId) {
+      const targetSession =
+        sessions.allSessions.value.find((s) => s.id === initialRoute.sessionId) ??
+        sessions.sessions.value.find((s) => s.id === initialRoute.sessionId);
+
+      if (targetSession) {
+        await handleSessionSelectAndNavigate(targetSession.id);
+      } else {
+        viewRoute.goToSessions();
       }
+    }
 
-      // Load sessions for the project
-      await sessions.loadSelectedSessionId();
-      await sessions.fetchSessions(projects.selectedProjectId.value);
+    // Ensure a default session exists (for new users)
+    // Check both sessions.value and allSessions.value to determine if sessions exist
+    const sessionsForProject = sessions.sessions.value.filter(
+      (s) => s.projectId === projects.selectedProjectId.value,
+    );
+    const allSessionsForProject = sessions.allSessions.value.filter(
+      (s) => s.projectId === projects.selectedProjectId.value,
+    );
+    const hasSessions = sessionsForProject.length > 0 || allSessionsForProject.length > 0;
 
-      // Parse URL parameters to determine initial view
-      // Note: This is called after fetchSessions so we can verify the session exists
-      const initialRoute = viewRoute.initFromUrl();
+    console.log(
+      '[AgentChat] Session check - sessions.value.length:',
+      sessions.sessions.value.length,
+    );
+    console.log(
+      '[AgentChat] Session check - allSessions.value.length:',
+      sessions.allSessions.value.length,
+    );
+    console.log('[AgentChat] Session check - sessionsForProject:', sessionsForProject.length);
+    console.log('[AgentChat] Session check - allSessionsForProject:', allSessionsForProject.length);
+    console.log('[AgentChat] Session check - hasSessions:', hasSessions);
 
-      // Handle deep link: URL specifies session to open directly (e.g., from Apply)
-      // Support cross-project sessions by checking allSessions first
-      if (initialRoute.view === 'chat' && initialRoute.sessionId) {
-        const targetSession =
-          sessions.allSessions.value.find((s) => s.id === initialRoute.sessionId) ??
-          sessions.sessions.value.find((s) => s.id === initialRoute.sessionId);
-
-        if (targetSession) {
-          // Use handleSessionSelectAndNavigate to handle cross-project switching
-          await handleSessionSelectAndNavigate(targetSession.id);
-        } else {
-          // Session doesn't exist in any project, fall back to sessions list
-          viewRoute.goToSessions();
-        }
-      }
-
-      // Ensure a default session exists (for new users)
-      // Note: This won't fetch sessions again since we already did above
+    if (!hasSessions) {
+      console.log('[AgentChat] No sessions found for project, ensuring default session...');
       await sessions.ensureDefaultSession(
         projects.selectedProjectId.value,
         (selectedCli.value as 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm') || 'claude',
       );
+    } else {
+      console.log('[AgentChat] Sessions already exist for project, skipping ensureDefaultSession');
+    }
 
-      // Only open SSE and load history if we're in chat view with a valid session
-      if (viewRoute.isChatView.value && sessions.selectedSessionId.value) {
-        server.openEventSource();
-        await loadSessionHistory(sessions.selectedSessionId.value);
-      }
+    // Try to initialize server (non-blocking, for AI chat functionality)
+    await server.initialize();
+
+    // Only open SSE and load history if we're in chat view with a valid session AND server is ready
+    if (
+      viewRoute.isChatView.value &&
+      sessions.selectedSessionId.value &&
+      server.isServerReady.value
+    ) {
+      server.openEventSource();
+      await loadSessionHistory(sessions.selectedSessionId.value);
     }
   }
+
+  console.log('[AgentChat.onMounted] Initialization complete');
 });
 
-// Watch for server ready
+// Watch for server becoming ready (enables AI chat functionality)
 watch(
   () => server.isServerReady.value,
   async (ready) => {
-    if (ready && projects.projects.value.length === 0) {
-      await projects.ensureDefaultProject();
-      await projects.fetchProjects();
+    if (ready && viewRoute.isChatView.value && sessions.selectedSessionId.value) {
+      // Server just came online while user is in chat view - open SSE
+      server.openEventSource();
+      await loadSessionHistory(sessions.selectedSessionId.value);
+    }
+    // When server becomes ready for the first time, sync existing sessions to ensure they exist on server
+    if (ready && !sessionsSyncedToServer.value) {
+      sessionsSyncedToServer.value = true;
+      await sessions.syncAllSessionsToServer();
+    }
+  },
+);
 
-      // Also fetch all sessions for the global sessions list
-      await sessions.fetchAllSessions();
-
-      const hasValidSelection =
-        projects.selectedProjectId.value &&
-        projects.projects.value.some((p) => p.id === projects.selectedProjectId.value);
-
-      if (!hasValidSelection && projects.projects.value.length > 0) {
-        projects.selectedProjectId.value = projects.projects.value[0].id;
-        await projects.saveSelectedProjectId();
-      }
+// Watch for changes in selected project ID and ensure it's always valid
+watch(
+  () => projects.selectedProjectId.value,
+  async (id) => {
+    if (!id && projects.projects.value.length > 0) {
+      projects.selectedProjectId.value = projects.projects.value[0].id;
+      await projects.saveSelectedProjectId();
     }
   },
 );
