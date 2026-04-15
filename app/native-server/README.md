@@ -1,183 +1,195 @@
-# Fastify Chrome Native Messaging服务
+# @zyzheal/chrome-mcp
 
-这是一个基于Fastify的TypeScript项目，用于与Chrome扩展进行原生通信。
+Chrome Native Messaging Host - 让 AI Agent 通过 MCP 协议控制 Chrome 浏览器。
 
 ## 功能特性
 
-- 通过Chrome Native Messaging协议与Chrome扩展进行双向通信
+- 通过 Chrome Native Messaging 协议与 Chrome 扩展进行双向通信
 - **支持多浏览器**: Chrome 和 Chromium (包括 Linux、macOS 和 Windows)
-- 提供RESTful API服务
-- 完全使用TypeScript开发
-- 包含完整的测试套件
-- 遵循代码质量最佳实践
+- 提供 MCP (Model Context Protocol) 服务，支持 AI Agent 通过 stdio 协议控制浏览器
+- 提供 RESTful API 服务
+- 完全使用 TypeScript 开发
+- 包含完整的诊断和修复工具
+
+## 快速开始
+
+### 安装
+
+```bash
+npm install -g @zyzheal/chrome-mcp
+```
+
+### 使用流程
+
+```
+安装 → 注册 → 启动 Chrome 扩展 → AI Agent 通过 MCP 控制浏览器
+```
+
+## 命令详解
+
+### 1. `chrome-mcp` - 用户管理工具
+
+#### 注册 Native Messaging Host
+
+```bash
+# 自动检测并注册所有已安装的浏览器
+chrome-mcp register --detect
+
+# 仅注册 Chrome
+chrome-mcp register --browser chrome
+
+# 仅注册 Chromium
+chrome-mcp register --browser chromium
+
+# 注册所有支持的浏览器
+chrome-mcp register --browser all
+
+# 强制重新注册
+chrome-mcp register --force
+
+# 系统级注册（需要管理员权限）
+sudo chrome-mcp register
+# 或
+chrome-mcp register --system
+```
+
+**注册位置：**
+
+| 系统    | 路径                                                            |
+| ------- | --------------------------------------------------------------- |
+| Linux   | `~/.config/[browser-name]/NativeMessagingHosts/`                |
+| macOS   | `~/Library/Application Support/[Browser]/NativeMessagingHosts/` |
+| Windows | `%APPDATA%\[Browser]\NativeMessagingHosts\`                     |
+
+#### 诊断安装问题
+
+```bash
+# 运行诊断检查
+chrome-mcp doctor
+
+# 自动修复常见问题
+chrome-mcp doctor --fix
+
+# 针对特定浏览器诊断
+chrome-mcp doctor --browser chrome
+```
+
+#### 修复权限问题
+
+```bash
+chrome-mcp fix-permissions
+```
+
+#### 更新端口配置
+
+```bash
+chrome-mcp update-port 3000
+```
+
+#### 导出诊断报告
+
+```bash
+# 输出 Markdown 格式报告
+chrome-mcp report
+
+# 输出 JSON 格式
+chrome-mcp report --json
+
+# 保存到文件
+chrome-mcp report --output report.md
+
+# 复制到剪贴板
+chrome-mcp report --copy
+
+# 包含完整日志
+chrome-mcp report --include-logs full
+```
+
+### 2. `mcp-chrome-stdio` - AI Agent MCP 服务
+
+此命令供 AI Agent（如 Claude Desktop、Cursor 等）使用，通过 stdio 协议代理工具调用到 Chrome 扩展。
+
+**在 AI Agent 配置中添加：**
+
+```json
+{
+  "mcpServers": {
+    "chrome": {
+      "command": "mcp-chrome-stdio"
+    }
+  }
+}
+```
 
 ## 开发环境设置
 
 ### 前置条件
 
 - Node.js 20+
-- npm 8+ 或 pnpm 8+
+- npm 8+
 
-### 安装
+### 本地开发
 
 ```bash
-git clone https://github.com/your-username/fastify-chrome-native.git
-cd fastify-chrome-native
+# 安装依赖
 npm install
-```
 
-### 开发
-
-1. 本地构建注册native server
-
-```bash
-cd app/native-server
+# 启动开发模式（自动构建并注册）
 npm run dev
-```
 
-2. 启动chrome extension
-
-```bash
-cd app/chrome-extension
-npm run dev
-```
-
-### 构建
-
-```bash
+# 构建
 npm run build
+
+# 测试
+npm run test
 ```
 
-### 注册Native Messaging主机
-
-#### 自动检测并注册所有已安装的浏览器
-
-```bash
-mcp-chrome-bridge register --detect
-```
-
-#### 注册特定浏览器
-
-```bash
-# 仅注册 Chrome
-mcp-chrome-bridge register --browser chrome
-
-# 仅注册 Chromium
-mcp-chrome-bridge register --browser chromium
-
-# 注册所有支持的浏览器
-mcp-chrome-bridge register --browser all
-```
-
-#### 全局安装（会自动注册检测到的浏览器）
-
-```bash
-npm i -g mcp-chrome-bridge
-```
-
-#### 浏览器支持
+## 浏览器支持
 
 | 浏览器        | Linux | macOS | Windows |
 | ------------- | ----- | ----- | ------- |
 | Google Chrome | ✓     | ✓     | ✓       |
 | Chromium      | ✓     | ✓     | ✓       |
 
-注册位置：
+## 与 Chrome 扩展集成
 
-- **Linux**: `~/.config/[browser-name]/NativeMessagingHosts/`
-- **macOS**: `~/Library/Application Support/[Browser]/NativeMessagingHosts/`
-- **Windows**: `%APPDATA%\[Browser]\NativeMessagingHosts\`
-
-### 与Chrome扩展集成
-
-以下是Chrome扩展中如何使用此服务的简单示例：
+以下是 Chrome 扩展中如何使用此服务的示例：
 
 ```javascript
 // background.js
 let nativePort = null;
-let serverRunning = false;
 
-// 启动Native Messaging服务
 function startServer() {
-  if (nativePort) {
-    console.log('已连接到Native Messaging主机');
-    return;
-  }
+  if (nativePort) return;
 
-  try {
-    nativePort = chrome.runtime.connectNative('com.yourcompany.fastify_native_host');
+  nativePort = chrome.runtime.connectNative('com.yourcompany.fastify_native_host');
 
-    nativePort.onMessage.addListener((message) => {
-      console.log('收到Native消息:', message);
+  nativePort.onMessage.addListener((message) => {
+    if (message.type === 'started') {
+      console.log(`服务已启动，端口: ${message.payload.port}`);
+    }
+  });
 
-      if (message.type === 'started') {
-        serverRunning = true;
-        console.log(`服务已启动，端口: ${message.payload.port}`);
-      } else if (message.type === 'stopped') {
-        serverRunning = false;
-        console.log('服务已停止');
-      } else if (message.type === 'error') {
-        console.error('Native错误:', message.payload.message);
-      }
-    });
-
-    nativePort.onDisconnect.addListener(() => {
-      console.log('Native连接断开:', chrome.runtime.lastError);
-      nativePort = null;
-      serverRunning = false;
-    });
-
-    // 启动服务器
-    nativePort.postMessage({ type: 'start', payload: { port: 3000 } });
-  } catch (error) {
-    console.error('启动Native Messaging时出错:', error);
-  }
+  nativePort.postMessage({ type: 'start', payload: { port: 3000 } });
 }
 
-// 停止服务器
-function stopServer() {
-  if (nativePort && serverRunning) {
-    nativePort.postMessage({ type: 'stop' });
-  }
-}
-
-// 测试与服务器的通信
-async function testPing() {
-  try {
-    const response = await fetch('http://localhost:3000/ping');
-    const data = await response.json();
-    console.log('Ping响应:', data);
-    return data;
-  } catch (error) {
-    console.error('Ping失败:', error);
-    return null;
-  }
-}
-
-// 在扩展启动时连接Native主机
 chrome.runtime.onStartup.addListener(startServer);
-
-// 导出供popup或内容脚本使用的API
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'startServer') {
-    startServer();
-    sendResponse({ success: true });
-  } else if (message.action === 'stopServer') {
-    stopServer();
-    sendResponse({ success: true });
-  } else if (message.action === 'testPing') {
-    testPing().then(sendResponse);
-    return true; // 指示我们将异步发送响应
-  }
-});
 ```
 
-### 测试
+## 架构说明
 
-```bash
-npm run test
+```
+AI Agent (Claude/Cursor)
+    ↓ (stdio 协议)
+mcp-chrome-stdio (MCP 代理)
+    ↓ (HTTP Streamable)
+Chrome 扩展中的 MCP 服务器
+    ↓ (Native Messaging)
+chrome-mcp (本地服务)
+    ↓
+Chrome 浏览器操作
 ```
 
-### 许可证
+## 许可证
 
 MIT
