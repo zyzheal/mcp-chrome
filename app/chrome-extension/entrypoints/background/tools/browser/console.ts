@@ -1,5 +1,5 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
-import { BaseBrowserToolExecutor } from '../base-browser';
+import { BaseBrowserToolExecutor, queryActiveTab } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { cdpSessionManager } from '@/utils/cdp-session-manager';
 import { consoleBuffer, BufferedConsoleMessage, BufferedConsoleException } from './console-buffer';
@@ -182,10 +182,10 @@ class ConsoleTool extends BaseBrowserToolExecutor {
         targetTab = await this.navigateToUrl(url, background === true, windowId);
       } else {
         // Use current active tab
-        const [activeTab] =
+        const activeTab =
           typeof windowId === 'number'
-            ? await chrome.tabs.query({ active: true, windowId })
-            : await chrome.tabs.query({ active: true, currentWindow: true });
+            ? (await chrome.tabs.query({ active: true, windowId }))[0]
+            : await queryActiveTab();
         if (!activeTab?.id) {
           return createErrorResponse('No active tab found and no URL provided.');
         }

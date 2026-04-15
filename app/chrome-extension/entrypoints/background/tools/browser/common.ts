@@ -1,5 +1,5 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
-import { BaseBrowserToolExecutor } from '../base-browser';
+import { BaseBrowserToolExecutor, queryActiveTab } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { captureFrameOnAction, isAutoCaptureActive } from './gif-recorder';
 
@@ -10,6 +10,7 @@ const DEFAULT_WINDOW_HEIGHT = 720;
 interface NavigateToolParams {
   url?: string;
   newWindow?: boolean;
+  newTab?: boolean; // when true, open URL in a new tab (default: false, navigates current tab)
   width?: number;
   height?: number;
   refresh?: boolean;
@@ -41,6 +42,7 @@ class NavigateTool extends BaseBrowserToolExecutor {
   async execute(args: NavigateToolParams): Promise<ToolResult> {
     const {
       newWindow = false,
+      newTab = false,
       width,
       height,
       url,
@@ -139,139 +141,16 @@ class NavigateTool extends BaseBrowserToolExecutor {
         };
       }
 
-      // 1. Check if URL is already open
-      // Prefer Chrome's URL match patterns for robust matching (host/path variations)
-      console.log(`Checking if URL is already open: ${url}`);
+      // If explicit tab ID provided, navigate/update that tab directly
+      if (typeof tabId === 'number') {
+        const targetTab = await chrome.tabs.get(tabId);
+        await chrome.tabs.update(targetTab.id!, { url });
 
-      // Build robust match patterns from the provided URL.
-      // This mirrors the approach in CloseTabsTool: ensure wildcard path and
-      // add common variants (www/no-www, http/https) to handle real-world redirects.
-      const buildUrlPatterns = (input: string): string[] => {
-        const patterns = new Set<string>();
-        try {
-          if (!input.includes('*')) {
-            const u = new URL(input);
-            // Use host-level wildcard to include all paths; we'll do precise selection later
-            const pathWildcard = '/*';
-
-            const hostNoWww = u.host.replace(/^www\./, '');
-            const hostWithWww = hostNoWww.startsWith('www.') ? hostNoWww : `www.${hostNoWww}`;
-
-            // Keep original host
-            patterns.add(`${u.protocol}//${u.host}${pathWildcard}`);
-            // Add no-www variant
-            patterns.add(`${u.protocol}//${hostNoWww}${pathWildcard}`);
-            // Add www variant
-            patterns.add(`${u.protocol}//${hostWithWww}${pathWildcard}`);
-
-            // Add protocol variant to catch http↔https redirects
-            const altProtocol = u.protocol === 'https:' ? 'http:' : 'https:';
-            patterns.add(`${altProtocol}//${u.host}${pathWildcard}`);
-            patterns.add(`${altProtocol}//${hostNoWww}${pathWildcard}`);
-            patterns.add(`${altProtocol}//${hostWithWww}${pathWildcard}`);
-          } else {
-            patterns.add(input);
-          }
-        } catch {
-          // Fallback: best-effort wildcard suffix
-          patterns.add(input.endsWith('/') ? `${input}*` : `${input}/*`);
-        }
-        return Array.from(patterns);
-      };
-
-      const urlPatterns = buildUrlPatterns(url);
-      const candidateTabs = await chrome.tabs.query({ url: urlPatterns });
-      console.log(`Found ${candidateTabs.length} matching tabs with patterns:`, urlPatterns);
-
-      // Prefer strict match when user specifies a concrete path/query.
-      // Only fall back to host-level activation when the target is site root.
-      const pickBestMatch = (target: string, tabsToPick: chrome.tabs.Tab[]) => {
-        let targetUrl: URL | undefined;
-        try {
-          targetUrl = new URL(target);
-        } catch {
-          // Not a fully-qualified URL; cannot do structured comparison
-          return tabsToPick[0];
+        if (background !== true) {
+          await this.ensureFocus(targetTab, { activate: true, focusWindow: true });
         }
 
-        const normalizePath = (p: string) => {
-          if (!p) return '/';
-          // Ensure leading slash
-          const withLeading = p.startsWith('/') ? p : `/${p}`;
-          // Remove trailing slash except when root
-          return withLeading !== '/' && withLeading.endsWith('/')
-            ? withLeading.slice(0, -1)
-            : withLeading;
-        };
-
-        const hostBase = (h: string) => h.replace(/^www\./, '').toLowerCase();
-        const isRootTarget = normalizePath(targetUrl.pathname) === '/' && !targetUrl.search;
-        const targetPath = normalizePath(targetUrl.pathname);
-        const targetSearch = targetUrl.search || '';
-        const targetHostBase = hostBase(targetUrl.host);
-
-        let best: { tab?: chrome.tabs.Tab; score: number } = { score: -1 };
-
-        for (const tab of tabsToPick) {
-          const tabUrlStr = tab.url || '';
-          let tabUrl: URL | undefined;
-          try {
-            tabUrl = new URL(tabUrlStr);
-          } catch {
-            continue;
-          }
-
-          const tabHostBase = hostBase(tabUrl.host);
-          if (tabHostBase !== targetHostBase) continue;
-
-          const tabPath = normalizePath(tabUrl.pathname);
-          const tabSearch = tabUrl.search || '';
-
-          // Scoring:
-          // 3 - exact path match and (if target has query) exact query match
-          // 2 - exact path match ignoring query (target without query)
-          // 1 - same host, any path (only if target is root)
-          let score = -1;
-          const pathEqual = tabPath === targetPath;
-          const searchEqual = tabSearch === targetSearch;
-
-          if (pathEqual && (targetSearch ? searchEqual : true)) {
-            score = 3;
-          } else if (pathEqual && !targetSearch) {
-            score = 2;
-          }
-
-          if (score > best.score) {
-            best = { tab, score };
-            if (score === 3) break; // Cannot do better
-          }
-        }
-
-        return best.tab;
-      };
-
-      const explicitTab = await this.tryGetTab(tabId);
-      const existingTab = explicitTab || pickBestMatch(url, candidateTabs);
-      if (existingTab?.id !== undefined) {
-        console.log(
-          `URL already open in Tab ID: ${existingTab.id}, Window ID: ${existingTab.windowId}`,
-        );
-        // Update URL only when explicit tab specified and url differs
-        if (explicitTab && typeof explicitTab.id === 'number') {
-          await chrome.tabs.update(explicitTab.id, { url });
-        }
-        // Optionally bring to foreground based on background flag
-        await this.ensureFocus(existingTab, {
-          activate: background !== true,
-          focusWindow: background !== true,
-        });
-
-        console.log(`Activated existing Tab ID: ${existingTab.id}`);
-        // Get updated tab information and return it
-        const updatedTab = await chrome.tabs.get(existingTab.id);
-
-        // Trigger auto-capture on existing tab activation
-        await this.triggerAutoCapture(updatedTab.id!, updatedTab.url);
+        await this.triggerAutoCapture(targetTab.id!, url);
 
         return {
           content: [
@@ -279,10 +158,10 @@ class NavigateTool extends BaseBrowserToolExecutor {
               type: 'text',
               text: JSON.stringify({
                 success: true,
-                message: 'Activated existing tab',
-                tabId: updatedTab.id,
-                windowId: updatedTab.windowId,
-                url: updatedTab.url,
+                message: 'Navigated to URL in specified tab',
+                tabId: targetTab.id,
+                windowId: targetTab.windowId,
+                url,
               }),
             },
           ],
@@ -290,8 +169,48 @@ class NavigateTool extends BaseBrowserToolExecutor {
         };
       }
 
-      // 2. If URL is not already open, decide how to open it based on options
+      // If newTab or newWindow explicitly requested
       const openInNewWindow = newWindow || typeof width === 'number' || typeof height === 'number';
+
+      if (newTab) {
+        // Create new tab in target window
+        let targetWindowId: number | undefined;
+        if (typeof windowId === 'number') {
+          targetWindowId = windowId;
+        } else {
+          const w = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+          targetWindowId = w?.id;
+        }
+
+        const createProps: chrome.tabs.CreateProperties = {
+          url,
+          active: background !== true,
+        };
+        if (targetWindowId) createProps.windowId = targetWindowId;
+
+        const newTabObj = await chrome.tabs.create(createProps);
+        if (background !== true && targetWindowId) {
+          await chrome.windows.update(targetWindowId, { focused: true });
+        }
+
+        await this.triggerAutoCapture(newTabObj.id!, url);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                success: true,
+                message: 'Opened URL in new tab',
+                tabId: newTabObj.id,
+                windowId: newTabObj.windowId,
+                url,
+              }),
+            },
+          ],
+          isError: false,
+        };
+      }
 
       if (openInNewWindow) {
         console.log('Opening URL in a new window.');
@@ -332,100 +251,39 @@ class NavigateTool extends BaseBrowserToolExecutor {
             ],
             isError: false,
           };
-        }
-      } else {
-        console.log('Opening URL in the last active window.');
-        // Try to open a new tab in the specified window, otherwise the most recently active window
-        let targetWindow: chrome.windows.Window | null = null;
-        if (typeof windowId === 'number') {
-          targetWindow = await chrome.windows.get(windowId, { populate: false });
-        }
-        if (!targetWindow) {
-          targetWindow = await chrome.windows.getLastFocused({ populate: false });
-        }
-
-        if (targetWindow && targetWindow.id !== undefined) {
-          console.log(`Found target Window ID: ${targetWindow.id}`);
-
-          const newTab = await chrome.tabs.create({
-            url: url,
-            windowId: targetWindow.id,
-            active: background === true ? false : true,
-          });
-          if (background !== true) {
-            await chrome.windows.update(targetWindow.id, { focused: true });
-          }
-
-          console.log(
-            `URL opened in new Tab ID: ${newTab.id} in existing Window ID: ${targetWindow.id}`,
-          );
-
-          // Trigger auto-capture on new tab
-          if (newTab.id) {
-            await this.triggerAutoCapture(newTab.id, newTab.url);
-          }
-
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({
-                  success: true,
-                  message: 'Opened URL in new tab in existing window',
-                  tabId: newTab.id,
-                  windowId: targetWindow.id,
-                  url: newTab.url,
-                }),
-              },
-            ],
-            isError: false,
-          };
         } else {
-          // In rare cases, if there's no recently active window (e.g., browser just started with no windows)
-          // Fall back to opening in a new window
-          console.warn('No last focused window found, falling back to creating a new window.');
-
-          const fallbackWindow = await chrome.windows.create({
-            url: url,
-            width: DEFAULT_WINDOW_WIDTH,
-            height: DEFAULT_WINDOW_HEIGHT,
-            focused: true,
-          });
-
-          if (fallbackWindow && fallbackWindow.id !== undefined) {
-            console.log(`URL opened in fallback new Window ID: ${fallbackWindow.id}`);
-
-            // Trigger auto-capture if fallback window has a tab
-            const firstTab = fallbackWindow.tabs?.[0];
-            if (firstTab?.id) {
-              await this.triggerAutoCapture(firstTab.id, firstTab.url);
-            }
-
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({
-                    success: true,
-                    message: 'Opened URL in new window',
-                    windowId: fallbackWindow.id,
-                    tabs: fallbackWindow.tabs
-                      ? fallbackWindow.tabs.map((tab) => ({
-                          tabId: tab.id,
-                          url: tab.url,
-                        }))
-                      : [],
-                  }),
-                },
-              ],
-              isError: false,
-            };
-          }
+          return createErrorResponse('Failed to create new window');
         }
       }
 
-      // If all attempts fail, return a generic error
-      return createErrorResponse('Failed to open URL: Unknown error occurred');
+      // Default behavior: navigate in the current active tab (no new tab, no jump)
+      const currentTab = await this.getActiveTabOrThrowInWindow(windowId);
+      console.log(`Navigating current tab ID: ${currentTab.id} to: ${url}`);
+      await chrome.tabs.update(currentTab.id!, { url });
+
+      // Do NOT activate/focus by default - only when explicitly requested
+      // This prevents the extension from stealing focus when the user has switched to another tab
+      if (background !== true) {
+        await this.ensureFocus(currentTab, { activate: true, focusWindow: false });
+      }
+
+      await this.triggerAutoCapture(currentTab.id!, url);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              message: 'Navigated to URL in current tab',
+              tabId: currentTab.id,
+              windowId: currentTab.windowId,
+              url,
+            }),
+          },
+        ],
+        isError: false,
+      };
     } catch (error) {
       if (chrome.runtime.lastError) {
         console.error(`Chrome API Error: ${chrome.runtime.lastError.message}`, error);
@@ -590,7 +448,7 @@ class CloseTabsTool extends BaseBrowserToolExecutor {
 
       // If no tabIds or URL provided, close the current active tab
       console.log('No tabIds or URL provided, closing active tab');
-      const [activeTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const activeTab = await queryActiveTab();
 
       if (!activeTab || !activeTab.id) {
         return createErrorResponse('No active tab found');

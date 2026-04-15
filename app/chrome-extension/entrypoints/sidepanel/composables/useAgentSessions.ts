@@ -71,13 +71,26 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
    */
   async function fetchSessions(projectId: string): Promise<void> {
     const serverPort = options.getServerPort();
-    if (!serverPort || !projectId) return;
+    if (!serverPort || !projectId) {
+      console.warn('[fetchSessions] Skipping: serverPort=', serverPort, 'projectId=', projectId);
+      return;
+    }
 
     // Increment nonce - any subsequent fetch will invalidate this one
     const myNonce = ++fetchSessionsNonce;
+    console.warn('[fetchSessions] Starting fetch for project:', projectId, 'nonce:', myNonce);
 
     const isStillValid = (): boolean => {
-      return myNonce === fetchSessionsNonce;
+      const valid = myNonce === fetchSessionsNonce;
+      if (!valid) {
+        console.warn(
+          '[fetchSessions] Nonce mismatch, aborting fetch. myNonce:',
+          myNonce,
+          'current:',
+          fetchSessionsNonce,
+        );
+      }
+      return valid;
     };
 
     isLoadingSessions.value = true;
@@ -85,28 +98,33 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
 
     try {
       const url = `http://127.0.0.1:${serverPort}/agent/projects/${encodeURIComponent(projectId)}/sessions`;
+      console.warn('[fetchSessions] Fetching from:', url);
       const response = await fetch(url);
 
       if (!isStillValid()) return;
 
       if (response.ok) {
         const data = await response.json();
+        console.warn('[fetchSessions] Response sessions count:', data.sessions?.length || 0);
 
         if (!isStillValid()) return;
 
         sessions.value = data.sessions || [];
+        console.warn('[fetchSessions] Updated sessions.value, count:', sessions.value.length);
 
         // If we have sessions but no selection, select the most recent one
         if (sessions.value.length > 0 && !selectedSessionId.value) {
+          console.warn('[fetchSessions] Auto-selecting first session:', sessions.value[0].id);
           selectedSessionId.value = sessions.value[0].id;
           await saveSelectedSessionId();
         }
       } else {
         const text = await response.text().catch(() => '');
+        console.warn('[fetchSessions] Response not ok:', response.status, text);
         sessionError.value = text || `HTTP ${response.status}`;
       }
     } catch (error) {
-      console.error('Failed to fetch sessions:', error);
+      console.error('[fetchSessions] Failed to fetch sessions:', error);
       sessionError.value = error instanceof Error ? error.message : 'Failed to fetch sessions';
     } finally {
       isLoadingSessions.value = false;
@@ -348,20 +366,62 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
     projectId: string,
     engineName: AgentCliPreference = 'claude',
   ): Promise<AgentSession | null> {
-    await fetchSessions(projectId);
+    console.warn('[ensureDefaultSession] Starting for project:', projectId, 'engine:', engineName);
+    console.warn('[ensureDefaultSession] Current sessions.value.length:', sessions.value.length);
+    console.warn('[ensureDefaultSession] Current selectedSessionId:', selectedSessionId.value);
+    console.warn('[ensureDefaultSession] allSessions.value.length:', allSessions.value.length);
 
-    // If sessions exist, select the first one if none selected
+    // Only fetch sessions if they haven't been loaded yet
+    // This avoids nonce conflicts when fetchSessions was already called externally
+    if (sessions.value.length === 0) {
+      console.warn('[ensureDefaultSession] sessions.value is empty, fetching sessions...');
+      await fetchSessions(projectId);
+    } else {
+      console.warn('[ensureDefaultSession] sessions.value already populated, skipping fetch');
+    }
+
+    console.warn(
+      '[ensureDefaultSession] After potential fetch, sessions.value.length:',
+      sessions.value.length,
+    );
+    console.warn(
+      '[ensureDefaultSession] After potential fetch, sessions:',
+      sessions.value.map((s) => s.id),
+    );
+
+    // If sessions exist, select the first one if none selected or selected is invalid
     if (sessions.value.length > 0) {
       if (
         !selectedSessionId.value ||
         !sessions.value.find((s) => s.id === selectedSessionId.value)
       ) {
+        console.warn('[ensureDefaultSession] Selecting first session:', sessions.value[0].id);
         await selectSession(sessions.value[0].id);
       }
       return selectedSession.value;
     }
 
-    // Create default session
+    // Fallback: Check allSessions if sessions.value is still empty
+    // This handles cases where fetchSessions failed but sessions exist on server
+    const sessionsForProject = allSessions.value.filter((s) => s.projectId === projectId);
+    if (sessionsForProject.length > 0) {
+      console.warn(
+        '[ensureDefaultSession] Found',
+        sessionsForProject.length,
+        'sessions in allSessions, using those',
+      );
+      sessions.value = sessionsForProject;
+      if (
+        !selectedSessionId.value ||
+        !sessions.value.find((s) => s.id === selectedSessionId.value)
+      ) {
+        await selectSession(sessionsForProject[0].id);
+      }
+      return selectedSession.value;
+    }
+
+    console.warn('[ensureDefaultSession] No sessions found anywhere, creating default session');
+    // Create default session only if no sessions exist
     return createSession(projectId, {
       engineName,
       name: 'Default Session',

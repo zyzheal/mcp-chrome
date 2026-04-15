@@ -41,8 +41,15 @@ export function useAgentServer(options: UseAgentServerOptions = {}) {
   let currentStreamSessionId: string | null = null;
 
   // Computed
+  /**
+   * Whether the server is ready for use.
+   * Returns true when server status shows running and we have a port.
+   * This works for both:
+   * 1. Full Native Messaging connection, OR
+   * 2. HTTP-only detection (external server start)
+   */
   const isServerReady = computed(() => {
-    return nativeConnected.value && serverStatus.value?.isRunning && serverPort.value !== null;
+    return serverStatus.value?.isRunning === true && serverPort.value !== null;
   });
 
   // Check native host connection using existing message type
@@ -107,6 +114,31 @@ export function useAgentServer(options: UseAgentServerOptions = {}) {
     }
   }
 
+  /**
+   * Directly probe HTTP server to check if it's running and get port.
+   * Used as fallback when Native Messaging is not available.
+   */
+  async function probeHttpServer(port?: number): Promise<number | null> {
+    const portsToTry = port ? [port, NATIVE_HOST.DEFAULT_PORT] : [NATIVE_HOST.DEFAULT_PORT];
+    for (const p of portsToTry) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const response = await fetch(`http://127.0.0.1:${p}/ping`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        if (response.ok) {
+          console.log(`[AgentServer] HTTP server probe succeeded on port ${p}`);
+          return p;
+        }
+      } catch {
+        // Try next port
+      }
+    }
+    return null;
+  }
+
   interface EnsureNativeServerOptions {
     /** If true, use CONNECT_NATIVE to re-enable auto-connect */
     forceConnect?: boolean;
@@ -122,25 +154,43 @@ export function useAgentServer(options: UseAgentServerOptions = {}) {
       if (!connected) {
         // Try to start native host
         connected = await startNativeHost(forceConnect);
-        if (!connected) {
-          console.error('Failed to connect to native host');
-          return false;
+      }
+
+      // Step 2: Poll for server status (handles async SERVER_STARTED race condition)
+      const POLL_INTERVAL = 200;
+      const POLL_TIMEOUT = 3000; // Reduced from 5s to 3s
+      const start = Date.now();
+
+      while (Date.now() - start < POLL_TIMEOUT) {
+        const status = await getServerStatus();
+        if (status?.isRunning && status.port) {
+          serverPort.value = status.port;
+          serverStatus.value = status;
+          // Server confirmed via Native Messaging - fetch engines and return
+          await fetchEngines();
+          return true;
         }
-        // Wait for connection to stabilize
-        await new Promise((resolve) => setTimeout(resolve, 500));
+        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
       }
 
-      // Step 2: Get server status
-      const status = await getServerStatus();
-      if (!status?.isRunning || !status.port) {
-        console.error('Server not running or port not available', status);
-        return false;
+      // Step 3: Native Messaging did not confirm server running - try HTTP probe
+      // This handles cases where:
+      // - Server was started externally (npm run dev, node -e, etc.)
+      // - Native Messaging connected but SERVER_STARTED not received
+      // - Native Messaging connected to old dead process
+      console.warn('[AgentServer] Native Messaging did not confirm server, trying HTTP probe...');
+      const httpPort = await probeHttpServer();
+      if (httpPort) {
+        serverPort.value = httpPort;
+        serverStatus.value = { isRunning: true, port: httpPort, lastUpdated: Date.now() };
+        nativeConnected.value = false; // HTTP server started externally
+        console.log('[AgentServer] HTTP server detected on port', httpPort, '- enabling MCP mode');
+        await fetchEngines();
+        return true;
       }
 
-      // Step 3: Fetch engines
-      await fetchEngines();
-
-      return true;
+      console.error('[AgentServer] Server not running - neither via Native Messaging nor HTTP');
+      return false;
     } finally {
       connecting.value = false;
     }

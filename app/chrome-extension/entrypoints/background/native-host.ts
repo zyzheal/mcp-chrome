@@ -91,7 +91,9 @@ function broadcastServerStatusChange(status: ServerStatus): void {
  */
 async function probeHttpServer(): Promise<ServerStatus | null> {
   const defaultPort = NATIVE_HOST.DEFAULT_PORT;
-  const portsToTry = currentServerStatus.port ? [currentServerStatus.port, defaultPort] : [defaultPort];
+  const portsToTry = currentServerStatus.port
+    ? [currentServerStatus.port, defaultPort]
+    : [defaultPort];
 
   for (const port of portsToTry) {
     if (!port) continue;
@@ -318,7 +320,9 @@ async function ensureNativeConnected(trigger: string, portOverride?: unknown): P
   // Check connection mode: skip Native Messaging in cli-direct mode
   const mode = await getConnectionMode();
   if (mode === 'cli-direct') {
-    console.log(`${LOG_PREFIX} Skipping Native Messaging connection in cli-direct mode (trigger=${trigger})`);
+    console.log(
+      `${LOG_PREFIX} Skipping Native Messaging connection in cli-direct mode (trigger=${trigger})`,
+    );
     currentServerStatus = {
       isRunning: false,
       port: undefined,
@@ -560,6 +564,9 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
         console.log(SUCCESS_MESSAGES.SERVER_STOPPED);
       } else if (message.type === NativeMessageType.ERROR_FROM_NATIVE_HOST) {
         console.error('Error from native host:', message.payload?.message || 'Unknown error');
+      } else if (message.type === 'heartbeat_ping') {
+        // Respond to heartbeat ping from native server
+        nativePort?.postMessage({ type: 'pong_from_extension' });
       } else if (message.type === 'file_operation_response') {
         // Forward file operation response back to the requesting tool
         chrome.runtime.sendMessage(message).catch(() => {
@@ -720,13 +727,15 @@ export const initNativeHostListener = () => {
         const httpStatus = probeHttpServer();
         // probeHttpServer is async but we need to respond immediately
         // Fire and forget - next call will have updated status
-        httpStatus.then((status) => {
-          if (status) {
-            currentServerStatus = status;
-            saveServerStatus(status).catch(() => {});
-            broadcastServerStatusChange(status);
-          }
-        }).catch(() => {});
+        httpStatus
+          .then((status) => {
+            if (status) {
+              currentServerStatus = status;
+              saveServerStatus(status).catch(() => {});
+              broadcastServerStatusChange(status);
+            }
+          })
+          .catch(() => {});
       }
       sendResponse({
         success: true,

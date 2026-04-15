@@ -4,6 +4,7 @@
  */
 
 // Native Host Configuration
+// 连接到 Chrome MCP Native Host
 export const NATIVE_HOST = {
   NAME: 'com.chromemcp.nativehost',
   DEFAULT_PORT: 12306,

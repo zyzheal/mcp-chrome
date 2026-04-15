@@ -1014,6 +1014,55 @@ export async function collectDoctorReport(options: DoctorOptions): Promise<Docto
           },
         });
         if (!ping.ok) nextSteps.push('Click "Connect" in the extension, then re-run doctor');
+
+        // Runtime health check (if server is reachable)
+        if (ping.ok) {
+          const healthUrl = new URL('/health?quick=1', url);
+          const health = await checkConnectivity(healthUrl.toString(), 5000);
+          if (health.ok && health.status) {
+            try {
+              const healthRes = await fetch(healthUrl.toString());
+              const healthData = await healthRes.json();
+              const componentCount = Object.keys(healthData.components || {}).length;
+              const degradedComponents = Object.entries(healthData.components || {})
+                .filter(([_, v]: [string, any]) => v.status !== 'ok')
+                .map(([k, _]: [string, any]) => k);
+
+              const healthStatus = healthData.status === 'ok' ? 'ok' : 'warn';
+              checks.push({
+                id: 'runtime.health',
+                title: 'Runtime health',
+                status: healthStatus,
+                message: `${healthData.status} (${componentCount} components checked)`,
+                details: {
+                  overall: healthData.status,
+                  componentCount,
+                  degradedComponents:
+                    degradedComponents.length > 0 ? degradedComponents : undefined,
+                  hint: 'Detailed component status available via GET /health endpoint',
+                },
+              });
+              if (healthStatus === 'warn') {
+                nextSteps.push(`Review degraded components: curl ${healthUrl}`);
+              }
+            } catch {
+              // Health endpoint parse error - not critical
+              checks.push({
+                id: 'runtime.health',
+                title: 'Runtime health',
+                status: 'warn',
+                message: 'Server running but health endpoint returned unexpected data',
+              });
+            }
+          } else {
+            checks.push({
+              id: 'runtime.health',
+              title: 'Runtime health',
+              status: 'warn',
+              message: `Health endpoint unreachable (${health.error || 'timeout'})`,
+            });
+          }
+        }
       } catch (e) {
         checks.push({
           id: 'port.config',

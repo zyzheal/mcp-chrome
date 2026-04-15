@@ -1,6 +1,6 @@
 {
   "name": "@zyzheal/chrome-mcp",
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "Chrome Native-Messaging host (Node)",
   "main": "dist/index.js",
   "bin": {

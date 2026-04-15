@@ -239,6 +239,10 @@ const engineAbbrev = computed(() => {
       return 'QW';
     case 'glm':
       return 'GL';
+    case 'kimi':
+      return 'KM';
+    case 'minimax':
+      return 'MM';
     default:
       // Fallback for any unknown engine name
       return (
@@ -323,6 +327,8 @@ const engineBadgeStyle = computed(() => {
     cursor: '#8b5cf6',
     qwen: '#6366f1',
     glm: '#ef4444',
+    kimi: '#3b82f6',
+    minimax: '#f59e0b',
   };
   const bg = colors[props.session.engineName] || '#6b7280';
   return {

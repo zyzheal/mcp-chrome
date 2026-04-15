@@ -221,8 +221,16 @@ function matchUrl(patterns: string[], url?: string): boolean {
 }
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | null> {
-  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tabs[0] || null;
+  try {
+    const window = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
+    const tabs = window?.id
+      ? await chrome.tabs.query({ active: true, windowId: window.id })
+      : await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs[0] || null;
+  } catch {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs[0] || null;
+  }
 }
 
 async function insertCssToTab(tabId: number, css: string, allFrames: boolean) {

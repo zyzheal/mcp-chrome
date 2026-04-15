@@ -56,7 +56,15 @@ import type {
 } from 'chrome-mcp-shared';
 
 // Valid engine names for validation
-const VALID_ENGINE_NAMES: readonly EngineName[] = ['claude', 'codex', 'cursor', 'qwen', 'glm'];
+const VALID_ENGINE_NAMES: readonly EngineName[] = [
+  'claude',
+  'codex',
+  'cursor',
+  'qwen',
+  'glm',
+  'kimi',
+  'minimax',
+];
 
 function isValidEngineName(name: string): name is EngineName {
   return VALID_ENGINE_NAMES.includes(name as EngineName);
@@ -324,6 +332,7 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         }
 
         const session = await createSession(projectId, body.engineName, {
+          id: body.id?.trim() || undefined, // Allow client to specify session ID
           name: body.name,
           model: body.model,
           permissionMode: body.permissionMode,

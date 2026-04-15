@@ -6,6 +6,7 @@ export { useAgentServer } from './useAgentServer';
 export { useAgentChat } from './useAgentChat';
 export { useAgentProjects } from './useAgentProjects';
 export { useAgentSessions } from './useAgentSessions';
+export { useStandaloneAgent } from './useStandaloneAgent';
 export { useAttachments, type AttachmentWithPreview } from './useAttachments';
 export { useAgentTheme, preloadAgentTheme, THEME_LABELS } from './useAgentTheme';
 export { useAgentThreads, AGENT_SERVER_PORT_KEY } from './useAgentThreads';
@@ -35,6 +36,7 @@ export type {
   UseAgentChatViewRouteOptions,
   UseAgentChatViewRoute,
 } from './useAgentChatViewRoute';
+export type { StandaloneAgentReturn } from './useStandaloneAgent';
 
 // RR V3 Composables
 export { useRRV3Rpc } from './useRRV3Rpc';
@@ -63,3 +65,7 @@ export type {
 // Agent Input Preferences (fake caret, etc.)
 export { useAgentInputPreferences } from './useAgentInputPreferences';
 export type { UseAgentInputPreferences } from './useAgentInputPreferences';
+
+// Standalone OpenAI Chat (direct API calls without native server)
+export { useOpenAIChat } from './useOpenAIChat';
+export type { OpenAIChatConfig, UseOpenAIChatOptions } from './useOpenAIChat';

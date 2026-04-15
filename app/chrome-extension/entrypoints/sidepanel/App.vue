@@ -1,11 +1,10 @@
 <template>
-  <div class="h-full w-full bg-slate-50 relative agent-theme" :data-agent-theme="currentTheme">
-    <!-- Sidepanel Navigator - only show on workflows/element-markers pages -->
-    <SidepanelNavigator
-      v-if="activeTab !== 'agent-chat'"
-      :activeTab="activeTab"
-      @change="handleTabChange"
-    />
+  <div
+    class="h-screen w-full bg-slate-50 relative agent-theme overflow-hidden"
+    :data-agent-theme="currentTheme"
+  >
+    <!-- Sidepanel Navigator - always visible -->
+    <SidepanelNavigator :activeTab="activeTab" @change="handleTabChange" />
 
     <!-- Workflows Tab -->
     <div v-show="activeTab === 'workflows'" class="h-full">
@@ -31,7 +30,12 @@
 
     <!-- Agent Chat Tab -->
     <div v-show="activeTab === 'agent-chat'" class="h-full">
-      <AgentChat />
+      <AgentChat @navigate:settings="activeTab = 'settings'" @back:home="activeTab = 'workflows'" />
+    </div>
+
+    <!-- Settings Tab -->
+    <div v-show="activeTab === 'settings'" class="absolute inset-0">
+      <SettingsView @navigate:chat="activeTab = 'agent-chat'" />
     </div>
 
     <!-- Element Markers Tab -->
@@ -295,12 +299,13 @@ import SidepanelNavigator from './components/SidepanelNavigator.vue';
 import { WorkflowsView } from './components/workflows';
 import { useAgentTheme } from './composables/useAgentTheme';
 import { useWorkflowsV3, type FlowLite } from './composables/useWorkflowsV3';
+import SettingsView from './components/Settings/SettingsView.vue';
 
 // Agent theme for consistent styling
 const { theme: currentTheme, initTheme } = useAgentTheme();
 
 // Tab state - default to AgentChat
-const activeTab = ref<'workflows' | 'element-markers' | 'agent-chat'>('agent-chat');
+const activeTab = ref<'workflows' | 'element-markers' | 'agent-chat' | 'settings'>('agent-chat');
 
 // Handle tab change and update URL for deep linking
 function handleTabChange(tab: 'workflows' | 'element-markers' | 'agent-chat') {
@@ -741,6 +746,8 @@ onMounted(async () => {
     activeTab.value = 'agent-chat';
   } else if (tabParam === 'workflows') {
     activeTab.value = 'workflows';
+  } else if (tabParam === 'settings') {
+    activeTab.value = 'settings';
   }
 
   // V3 workflows data is auto-refreshed by useWorkflowsV3 composable

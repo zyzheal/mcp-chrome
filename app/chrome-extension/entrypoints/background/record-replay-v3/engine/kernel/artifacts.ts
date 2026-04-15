@@ -66,12 +66,9 @@ export function createNotImplementedArtifactService(): ArtifactService {
 
 /**
  * 创建基于 chrome.tabs.captureVisibleTab 的 ArtifactService
- * @description 使用 Chrome API 截取可见标签页
+ * @description 使用 Chrome API 截取可见标签页，截图数据持久化到 IndexedDB
  */
 export function createChromeArtifactService(): ArtifactService {
-  // In-memory storage for screenshots (could be replaced with IndexedDB)
-  const screenshotStore = new Map<string, string>();
-
   return {
     screenshot: async (tabId, options) => {
       try {
@@ -114,12 +111,23 @@ export function createChromeArtifactService(): ArtifactService {
 
     saveScreenshot: async (runId, nodeId, base64, filename) => {
       try {
+        // Import the storage module dynamically
+        const { saveArtifact } = await import('../../storage/artifacts');
+
         // Generate filename if not provided
         const savedAs = filename ?? `${runId}_${nodeId}_${Date.now()}.png`;
         const key = `${runId}/${savedAs}`;
 
-        // Store in memory (in production, this would go to IndexedDB or cloud storage)
-        screenshotStore.set(key, base64);
+        // Save to IndexedDB
+        await saveArtifact({
+          id: key,
+          runId,
+          nodeId,
+          filename: savedAs,
+          base64,
+          createdAt: new Date().toISOString(),
+          format: 'png',
+        });
 
         return { savedAs };
       } catch (e) {

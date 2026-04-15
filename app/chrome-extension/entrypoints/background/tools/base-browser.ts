@@ -1,8 +1,30 @@
 import { ToolExecutor } from '@/common/tool-handler';
 import type { ToolResult } from '@/common/tool-handler';
 import { TIMEOUTS, ERROR_MESSAGES } from '@/common/constants';
+import { queryActiveTab as queryTrackedActiveTab } from '../active-tab-tracker';
 
 const PING_TIMEOUT_MS = 300;
+
+/**
+ * Query for the active tab using the active tab tracker.
+ * The tracker maintains the actual user-visible tab across tool operations,
+ * making it more reliable than getLastFocused or currentWindow.
+ */
+export async function queryActiveTab(
+  queryExtras?: Omit<chrome.tabs.QueryInfo, 'active'>,
+): Promise<chrome.tabs.Tab | null> {
+  // First try the tracked active tab
+  const tracked = await queryTrackedActiveTab();
+  if (tracked) return tracked;
+
+  // Fallback: use explicit windowId or currentWindow
+  if (queryExtras?.windowId) {
+    const tabs = await chrome.tabs.query({ active: true, windowId: queryExtras.windowId });
+    return tabs[0] || null;
+  }
+  const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tabs[0] || null;
+}
 
 /**
  * Base class for browser tool executors
@@ -10,6 +32,46 @@ const PING_TIMEOUT_MS = 300;
 export abstract class BaseBrowserToolExecutor implements ToolExecutor {
   abstract name: string;
   abstract execute(args: any): Promise<ToolResult>;
+
+  /**
+   * Get the window ID that the user is currently looking at.
+   * Uses the tracked active tab for accuracy.
+   */
+  protected async getVisibleWindowId(): Promise<number | undefined> {
+    const tab = await queryTrackedActiveTab();
+    return tab?.windowId;
+  }
+
+  /**
+   * Get the active tab in the user's currently visible window.
+   * Uses the tracked active tab for accuracy across tool operations.
+   */
+  protected async getActiveTabOrThrow(): Promise<chrome.tabs.Tab> {
+    const tab = await queryTrackedActiveTab();
+    if (!tab || !tab.id) throw new Error('Active tab not found');
+    return tab;
+  }
+
+  /**
+   * Get the active tab. When windowId provided, search within that window;
+   * otherwise use the tracked active tab.
+   */
+  protected async getActiveTabInWindow(windowId?: number): Promise<chrome.tabs.Tab | null> {
+    if (typeof windowId === 'number') {
+      const tabs = await chrome.tabs.query({ active: true, windowId });
+      return tabs && tabs[0] ? tabs[0] : null;
+    }
+    return await queryTrackedActiveTab();
+  }
+
+  /**
+   * Same as getActiveTabInWindow, but throws if not found.
+   */
+  protected async getActiveTabOrThrowInWindow(windowId?: number): Promise<chrome.tabs.Tab> {
+    const tab = await this.getActiveTabInWindow(windowId);
+    if (!tab || !tab.id) throw new Error('Active tab not found');
+    return tab;
+  }
 
   /**
    * Inject content script into tab
@@ -124,15 +186,6 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
   }
 
   /**
-   * Get the active tab in the current window. Throws when not found.
-   */
-  protected async getActiveTabOrThrow(): Promise<chrome.tabs.Tab> {
-    const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!active || !active.id) throw new Error('Active tab not found');
-    return active;
-  }
-
-  /**
    * Optionally focus window and/or activate tab. Defaults preserve current behavior
    * when caller sets activate/focus flags explicitly.
    */
@@ -148,26 +201,5 @@ export abstract class BaseBrowserToolExecutor implements ToolExecutor {
     if (activate && typeof tab.id === 'number') {
       await chrome.tabs.update(tab.id, { active: true });
     }
-  }
-
-  /**
-   * Get the active tab. When windowId provided, search within that window; otherwise currentWindow.
-   */
-  protected async getActiveTabInWindow(windowId?: number): Promise<chrome.tabs.Tab | null> {
-    if (typeof windowId === 'number') {
-      const tabs = await chrome.tabs.query({ active: true, windowId });
-      return tabs && tabs[0] ? tabs[0] : null;
-    }
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    return tabs && tabs[0] ? tabs[0] : null;
-  }
-
-  /**
-   * Same as getActiveTabInWindow, but throws if not found.
-   */
-  protected async getActiveTabOrThrowInWindow(windowId?: number): Promise<chrome.tabs.Tab> {
-    const tab = await this.getActiveTabInWindow(windowId);
-    if (!tab || !tab.id) throw new Error('Active tab not found');
-    return tab;
   }
 }

@@ -1,5 +1,5 @@
 import { createErrorResponse, ToolResult } from '@/common/tool-handler';
-import { BaseBrowserToolExecutor } from '../base-browser';
+import { BaseBrowserToolExecutor, queryActiveTab } from '../base-browser';
 import { TOOL_NAMES } from 'chrome-mcp-shared';
 import { TOOL_MESSAGE_TYPES } from '@/common/message-types';
 
@@ -70,14 +70,13 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
         }
       } else {
         // Use active tab (prefer specified window)
-        const tabs =
+        const tab =
           typeof windowId === 'number'
-            ? await chrome.tabs.query({ active: true, windowId })
-            : await chrome.tabs.query({ active: true, currentWindow: true });
-        if (!tabs[0]) {
+            ? (await chrome.tabs.query({ active: true, windowId }))[0]
+            : await queryActiveTab();
+        if (!tab) {
           return createErrorResponse('No active tab found');
         }
-        tab = tabs[0];
       }
 
       if (!tab.id) {
@@ -187,12 +186,11 @@ class GetInteractiveElementsTool extends BaseBrowserToolExecutor {
 
     try {
       // Get current tab
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      if (!tabs[0]) {
+      const tab = await queryActiveTab();
+      if (!tab) {
         return createErrorResponse('No active tab found');
       }
 
-      const tab = tabs[0];
       if (!tab.id) {
         return createErrorResponse('Active tab has no ID');
       }

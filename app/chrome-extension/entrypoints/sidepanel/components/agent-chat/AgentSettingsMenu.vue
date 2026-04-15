@@ -103,6 +103,36 @@
       }"
     />
 
+    <!-- API Section -->
+    <div
+      class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider"
+      :style="{ color: 'var(--ac-text-subtle, #a8a29e)' }"
+    >
+      API
+    </div>
+
+    <button
+      class="w-full px-3 py-2 text-left text-sm ac-menu-item"
+      :style="{ color: 'var(--ac-text, #1a1a1a)' }"
+      @click="$emit('openai:settings')"
+    >
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M12 2a10 10 0 1010 10A10 10 0 0012 2z" />
+        </svg>
+        <span>OpenAI 配置</span>
+      </div>
+    </button>
+
+    <!-- Divider -->
+    <div
+      class="my-2"
+      :style="{
+        borderTop: 'var(--ac-border-width, 1px) solid var(--ac-border, #e5e5e5)',
+      }"
+    />
+
     <!-- Reconnect -->
     <button
       class="w-full px-3 py-2 text-left text-sm ac-menu-item"
@@ -129,6 +159,7 @@ defineEmits<{
   reconnect: [];
   'attachments:open': [];
   'fakeCaret:toggle': [enabled: boolean];
+  'openai:settings': [];
 }>();
 
 const themes: { id: AgentThemeId; label: string }[] = [

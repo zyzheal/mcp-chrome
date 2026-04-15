@@ -80,7 +80,14 @@ export class AgentChatService {
     if (dbSessionId) {
       dbSession = await getSession(dbSessionId);
       if (!dbSession) {
-        throw new Error(`Session not found for id: ${dbSessionId}`);
+        // Session not found in database - this can happen when:
+        // 1. Frontend created session in chrome.storage.local but sync to server failed
+        // 2. Database was reset or corrupted
+        // For now, throw error. The frontend should ensure session sync before sending messages.
+        // TODO: Consider creating session on-the-fly if payload contains session metadata
+        throw new Error(
+          `Session not found for id: ${dbSessionId}. Please try creating a new session or refreshing the page.`,
+        );
       }
       // Validate project association
       if (projectId && dbSession.projectId !== projectId) {

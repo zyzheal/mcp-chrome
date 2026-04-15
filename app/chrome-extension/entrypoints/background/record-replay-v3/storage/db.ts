@@ -7,7 +7,7 @@
 export const RR_V3_DB_NAME = 'rr_v3';
 
 /** 数据库版本 */
-export const RR_V3_DB_VERSION = 1;
+export const RR_V3_DB_VERSION = 2;
 
 /**
  * Store 名称常量
@@ -19,6 +19,7 @@ export const RR_V3_STORES = {
   QUEUE: 'queue',
   PERSISTENT_VARS: 'persistent_vars',
   TRIGGERS: 'triggers',
+  ARTIFACTS: 'artifacts',
 } as const;
 
 /**
@@ -93,6 +94,14 @@ export const RR_V3_STORE_SCHEMAS: Record<string, StoreConfig> = {
       { name: 'kind_enabled', keyPath: ['kind', 'enabled'] },
     ],
   },
+  [RR_V3_STORES.ARTIFACTS]: {
+    keyPath: 'id',
+    indexes: [
+      { name: 'runId', keyPath: 'runId' },
+      { name: 'nodeId', keyPath: 'nodeId' },
+      { name: 'createdAt', keyPath: 'createdAt' },
+    ],
+  },
 };
 
 /**
@@ -102,6 +111,9 @@ export function handleUpgrade(db: IDBDatabase, oldVersion: number, _newVersion: 
   // Version 0 -> 1: 创建所有 stores
   if (oldVersion < 1) {
     for (const [storeName, config] of Object.entries(RR_V3_STORE_SCHEMAS)) {
+      // Skip artifacts store in v1 (added in v2)
+      if (storeName === 'artifacts') continue;
+
       const store = db.createObjectStore(storeName, {
         keyPath: config.keyPath,
         autoIncrement: config.autoIncrement,
@@ -110,6 +122,23 @@ export function handleUpgrade(db: IDBDatabase, oldVersion: number, _newVersion: 
       // 创建索引
       if (config.indexes) {
         for (const index of config.indexes) {
+          store.createIndex(index.name, index.keyPath, index.options);
+        }
+      }
+    }
+  }
+
+  // Version 1 -> 2: 添加 artifacts store
+  if (oldVersion < 2) {
+    const artifactsConfig = RR_V3_STORE_SCHEMAS['artifacts'];
+    if (artifactsConfig) {
+      const store = db.createObjectStore('artifacts', {
+        keyPath: artifactsConfig.keyPath,
+        autoIncrement: artifactsConfig.autoIncrement,
+      });
+
+      if (artifactsConfig.indexes) {
+        for (const index of artifactsConfig.indexes) {
           store.createIndex(index.name, index.keyPath, index.options);
         }
       }
