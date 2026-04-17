@@ -6,6 +6,8 @@
  */
 import { ref, computed } from 'vue';
 import type { AgentMessage, AgentStoredMessage } from 'chrome-mcp-shared';
+import { mcpSchemaToOpenAITools, type OpenAIToolDefinition } from '@/common/openai-tools-adapter';
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 
 // =============================================================================
 // Types
@@ -75,6 +77,48 @@ async function checkNativeServerRunning(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Execute a single tool call via background script.
+ */
+async function executeToolCall(toolName: string, args: Record<string, unknown>): Promise<string> {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      {
+        type: BACKGROUND_MESSAGE_TYPES.EXECUTE_TOOL_CALL,
+        payload: {
+          toolName,
+          args,
+          requestId: crypto.randomUUID(),
+        },
+      },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message || 'Background script error'));
+          return;
+        }
+        if (!response?.success) {
+          reject(new Error(response?.error || 'Tool execution failed'));
+          return;
+        }
+        const result = response.result;
+        if (result?.content && Array.isArray(result.content)) {
+          const textParts = result.content
+            .filter((c: any) => c.type === 'text')
+            .map((c: any) => c.text)
+            .join('\n');
+          resolve(textParts || JSON.stringify(result));
+        } else {
+          resolve(JSON.stringify(result ?? response));
+        }
+      },
+    );
+  });
+}
+
+function sanitizeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? 'Unknown error');
 }
 
 /**
@@ -186,6 +230,151 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
   }
 
   /**
+   * Core loop: send request with tools, handle tool calls, return final text.
+   */
+  async function executeWithToolLoop(
+    config: OpenAIChatConfig,
+    initialMessages: Array<{ role: string; content: string }>,
+    systemNote: string,
+    requestId: string,
+    _sessionId: string,
+    startTime: number,
+  ): Promise<string> {
+    const tools: OpenAIToolDefinition[] = config.textOnlyMode ? [] : mcpSchemaToOpenAITools();
+
+    const messages = [...initialMessages];
+    let maxTurns = 10;
+    let assistantContent = '';
+
+    while (maxTurns-- > 0) {
+      if (currentRequestId.value !== requestId) {
+        throw new Error('Request cancelled');
+      }
+
+      let apiUrl = config.baseUrl.replace(/\/+$/, '');
+      if (!apiUrl.endsWith('/v1/chat/completions') && !apiUrl.endsWith('/chat/completions')) {
+        apiUrl += apiUrl.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions';
+      }
+
+      const requestBody: any = {
+        model: config.model,
+        messages:
+          systemNote && messages === initialMessages
+            ? [{ role: 'system', content: systemNote }, ...messages]
+            : messages,
+        stream: false,
+      };
+
+      if (tools.length > 0) {
+        requestBody.tools = tools.map((t) => ({
+          type: 'function',
+          function: {
+            name: t.function.name,
+            description: t.function.description,
+            parameters: t.function.parameters,
+          },
+        }));
+        requestBody.tool_choice = 'auto';
+      }
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => '');
+        throw new Error(errorText || `HTTP ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      const choice = data.choices?.[0];
+      if (!choice) throw new Error('No choices in OpenAI response');
+
+      const message = choice.message;
+      assistantContent = message?.content ?? '';
+
+      if (data.usage) {
+        lastUsage.value = {
+          inputTokens: data.usage.prompt_tokens ?? 0,
+          outputTokens: data.usage.completion_tokens ?? 0,
+          totalCostUsd: 0,
+          durationMs: Date.now() - startTime,
+          numTurns: (lastUsage.value?.numTurns ?? 0) + 1,
+        };
+      }
+
+      const toolCalls = message?.tool_calls;
+      if (!toolCalls || toolCalls.length === 0) break;
+
+      requestState.value = 'running';
+      isStreaming.value = true;
+
+      const toolResults: Array<{
+        role: 'tool';
+        tool_call_id: string;
+        content: string;
+      }> = [];
+
+      for (const toolCall of toolCalls) {
+        const toolName = toolCall.function?.name;
+        let toolArgs: Record<string, unknown>;
+        try {
+          toolArgs = JSON.parse(toolCall.function?.arguments || '{}');
+        } catch {
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: `Error: Invalid JSON arguments: ${toolCall.function?.arguments}`,
+          });
+          continue;
+        }
+
+        console.log(`[OpenAI Chat] Executing tool: ${toolName}`, toolArgs);
+        try {
+          const result = await executeToolCall(toolName, toolArgs);
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: result,
+          });
+        } catch (error) {
+          console.error(`[OpenAI Chat] Tool ${toolName} failed:`, error);
+          toolResults.push({
+            role: 'tool',
+            tool_call_id: toolCall.id,
+            content: `Error: ${sanitizeError(error)}`,
+          });
+        }
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: assistantContent || null,
+        tool_calls,
+      });
+
+      messages.push(
+        ...toolResults.map((r) => ({
+          role: 'tool' as const,
+          tool_call_id: r.tool_call_id,
+          content: r.content,
+        })),
+      );
+    }
+
+    if (maxTurns <= 0) {
+      console.warn('[OpenAI Chat] Max tool call turns reached (10)');
+    }
+
+    return assistantContent || '';
+  }
+
+  /**
    * Send message to OpenAI-compatible API.
    */
   async function send(
@@ -291,57 +480,28 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
     const startTime = Date.now();
 
     try {
-      // Build request body
-      const requestBody: any = {
-        model: config.model,
-        messages: apiMessages,
-        stream: false,
-      };
-
-      // Add system note for text-only mode
-      if (systemNote) {
-        requestBody.messages = [{ role: 'system', content: systemNote }, ...apiMessages];
-      }
-
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
-        throw new Error(errorText || `HTTP ${response.status} ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      const assistantContent = data.choices?.[0]?.message?.content ?? '';
-      const assistantMessageId = data.id || `resp-${Date.now()}`;
-
-      // Extract usage if available
-      if (data.usage) {
-        lastUsage.value = {
-          inputTokens: data.usage.prompt_tokens ?? 0,
-          outputTokens: data.usage.completion_tokens ?? 0,
-          totalCostUsd: 0, // Not provided by most OpenAI-compatible APIs
-          durationMs: Date.now() - startTime,
-          numTurns: (lastUsage.value?.numTurns ?? 0) + 1,
-        };
-      }
-
-      // Add assistant response
-      const assistantMsg: AgentMessage = openAiToAgentMessage(
-        assistantMessageId,
+      // Execute the main request (with possible function calling loop)
+      const finalContent = await executeWithToolLoop(
+        config,
+        apiMessages,
+        systemNote,
+        requestId,
         sessionId,
-        'assistant',
-        assistantContent,
+        startTime,
       );
-      assistantMsg.requestId = requestId;
-      messages.value.push(assistantMsg);
+
+      if (finalContent !== null) {
+        // Add assistant response
+        const assistantMessageId = `resp-${Date.now()}`;
+        const assistantMsg: AgentMessage = openAiToAgentMessage(
+          assistantMessageId,
+          sessionId,
+          'assistant',
+          finalContent,
+        );
+        assistantMsg.requestId = requestId;
+        messages.value.push(assistantMsg);
+      }
 
       // Persist messages
       if (options.persistMessage) {
