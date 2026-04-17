@@ -20,6 +20,7 @@ export { default as AgentSessionsView } from './AgentSessionsView.vue';
 export { default as AgentSessionListItem } from './AgentSessionListItem.vue';
 export { default as AgentOpenProjectMenu } from './AgentOpenProjectMenu.vue';
 export { default as FakeCaretOverlay } from './FakeCaretOverlay.vue';
+export { default as ModeIndicator } from './ModeIndicator.vue';
 
 // Timeline step components
 export { default as TimelineNarrativeStep } from './timeline/TimelineNarrativeStep.vue';

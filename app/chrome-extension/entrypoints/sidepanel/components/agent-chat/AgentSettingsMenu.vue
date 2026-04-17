@@ -114,6 +114,26 @@
     <button
       class="w-full px-3 py-2 text-left text-sm ac-menu-item"
       :style="{ color: 'var(--ac-text, #1a1a1a)' }"
+      @click="$emit('native-server:settings')"
+    >
+      <div class="flex items-center gap-2">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+          <line x1="8" y1="21" x2="16" y2="21" />
+          <line x1="12" y1="17" x2="12" y2="21" />
+        </svg>
+        <span>Native Server 配置</span>
+        <span
+          v-if="nativeServerReady"
+          class="ml-auto w-2 h-2 rounded-full"
+          :style="{ backgroundColor: '#22c55e' }"
+        />
+      </div>
+    </button>
+
+    <button
+      class="w-full px-3 py-2 text-left text-sm ac-menu-item"
+      :style="{ color: 'var(--ac-text, #1a1a1a)' }"
       @click="$emit('openai:settings')"
     >
       <div class="flex items-center gap-2">
@@ -152,6 +172,8 @@ defineProps<{
   theme: AgentThemeId;
   /** Fake caret (comet effect) enabled state */
   fakeCaretEnabled?: boolean;
+  /** Whether Native Server is ready (SSE connected) */
+  nativeServerReady?: boolean;
 }>();
 
 defineEmits<{
@@ -160,6 +182,7 @@ defineEmits<{
   'attachments:open': [];
   'fakeCaret:toggle': [enabled: boolean];
   'openai:settings': [];
+  'native-server:settings': [];
 }>();
 
 const themes: { id: AgentThemeId; label: string }[] = [

@@ -72,6 +72,10 @@
             :reasoning-effort="currentReasoningEffort"
             :available-reasoning-efforts="currentAvailableReasoningEfforts"
             :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
+            :native-server-ready="server.isServerReady.value"
+            :has-open-a-i-config="getSavedOpenAIConfig() !== null"
+            :use-native-server="!useDirectOpenAIExplicit"
+            :text-only-mode="getSavedOpenAIConfig()?.textOnlyMode ?? false"
             @update:model-value="activeChat.input.value = $event"
             @submit="handleSend"
             @cancel="activeChat.cancelCurrentRequest()"
@@ -85,6 +89,8 @@
             @reasoning-effort:change="handleComposerReasoningEffortChange"
             @session:settings="handleComposerOpenSettings"
             @session:reset="handleComposerReset"
+            @mode:switch="handleModeSwitch"
+            @navigate:settings="handleOpenAISettings"
           />
         </template>
       </AgentChatShell>
@@ -138,11 +144,13 @@
       :open="settingsMenuOpen"
       :theme="themeState.theme.value"
       :fake-caret-enabled="inputPreferences.fakeCaretEnabled.value"
+      :native-server-ready="server.isServerReady.value"
       @theme:set="handleThemeChange"
       @reconnect="handleReconnect"
       @attachments:open="handleOpenAttachmentCache"
       @fake-caret:toggle="handleFakeCaretToggle"
       @openai:settings="handleOpenAISettings"
+      @native-server:settings="handleNativeServerSettings"
     />
 
     <AgentOpenProjectMenu
@@ -309,7 +317,20 @@ const chat = useAgentChat({
 // =============================================================================
 
 const openaiChat = useOpenAIChat({
-  getConfig: getSavedOpenAIConfig,
+  getConfig: () => {
+    const cfg = getSavedOpenAIConfig();
+    if (!cfg) return null;
+    return {
+      baseUrl: cfg.baseUrl,
+      apiKey: cfg.apiKey,
+      model: cfg.model,
+      maxTokens: 4096,
+      temperature: 0.7,
+      enabled: cfg.enabled,
+      textOnlyMode: cfg.textOnlyMode,
+      promptForNativeServer: cfg.promptForNativeServer,
+    };
+  },
   getSessionId: () => agent.selectedSessionId.value,
   persistMessage: (msg) => {
     // Persist messages via standalone agent's storage
@@ -329,21 +350,44 @@ const openaiChat = useOpenAIChat({
 // =============================================================================
 
 /**
+ * User-controlled mode override.
+ * null = auto-detect, true = force Native Server, false = force OpenAI direct.
+ */
+const useNativeServerOverride = ref<boolean | null>(null);
+
+/**
  * Whether to use direct OpenAI API (no native server).
  * Only use direct mode when:
  * 1. OpenAI config exists and is enabled, AND
- * 2. Server is not ready (neither via Native Messaging nor HTTP)
+ * 2. Server is not ready (neither via Native Messaging nor HTTP), AND
+ * 3. User has not explicitly requested Native Server mode
+ *
+ * User can override via the mode indicator in the composer.
  */
 const useDirectOpenAI = computed(() => {
   const config = getSavedOpenAIConfig();
-  // If no OpenAI config or disabled, use MCP mode (default)
-  if (!config) return false;
-  if (!config.enabled) return false;
-  // If server is ready (via Native Messaging or HTTP), use MCP mode
+
+  // Explicit user override takes priority
+  if (useNativeServerOverride.value !== null) {
+    if (useNativeServerOverride.value) return false;
+    // User wants OpenAI direct mode
+    if (!config) return false;
+    if (!config.enabled) return false;
+    return true;
+  }
+
+  // Auto mode: use Native Server if available
   if (server.isServerReady.value) return false;
-  // Server not ready - use direct OpenAI API
-  return true;
+  // Server not ready - still use MCP mode by default (not direct OpenAI)
+  // The mode indicator will show a warning if tools are needed
+  return false;
 });
+
+/**
+ * Whether the user has explicitly enabled OpenAI direct mode.
+ * Used for the mode indicator.
+ */
+const useDirectOpenAIExplicit = computed(() => useNativeServerOverride.value === false);
 
 /**
  * Active chat composable - switches between server-based and direct OpenAI.
@@ -692,6 +736,42 @@ function handleOpenAISettings(): void {
   emit('navigate:settings');
 }
 
+// Native Server Settings handler - navigate to settings tab
+function handleNativeServerSettings(): void {
+  closeMenus();
+  emit('navigate:settings');
+}
+
+// =============================================================================
+// Mode Switching
+// =============================================================================
+
+/**
+ * Handle mode switch from the ModeIndicator component.
+ * Called when user clicks the mode indicator and selects a mode.
+ */
+function handleModeSwitch(mode: 'native' | 'openai'): void {
+  if (mode === 'native') {
+    useNativeServerOverride.value = true;
+    // Try to ensure native server is running
+    if (!server.isServerReady.value) {
+      server.ensureNativeServer().catch(() => {
+        // If native server fails to start, warn user
+        chat.errorMessage.value = '无法启动 Native Server。请确认已安装并运行本地服务。';
+      });
+    }
+  } else {
+    // OpenAI direct mode
+    const config = getSavedOpenAIConfig();
+    if (!config) {
+      // No config - go to settings
+      emit('navigate:settings');
+      return;
+    }
+    useNativeServerOverride.value = false;
+  }
+}
+
 // Session handlers
 async function handleSessionSelect(sessionId: string): Promise<void> {
   await sessions.selectSession(sessionId);
@@ -1035,6 +1115,8 @@ function getSavedOpenAIConfig(): {
   apiKey: string;
   model: string;
   enabled: boolean;
+  textOnlyMode: boolean;
+  promptForNativeServer: boolean;
 } | null {
   try {
     const saved = localStorage.getItem('openai_config');
@@ -1046,6 +1128,8 @@ function getSavedOpenAIConfig(): {
           apiKey: data.apiKey,
           model: data.model || 'gpt-4o',
           enabled: data.enabled ?? true,
+          textOnlyMode: data.textOnlyMode ?? false,
+          promptForNativeServer: data.promptForNativeServer ?? true,
         };
       }
     }

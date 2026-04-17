@@ -89,6 +89,9 @@
     <!-- Timeline -->
     <AgentTimeline :items="thread.items" :state="thread.state" />
 
+    <!-- Export button (only for completed threads) -->
+    <ExportButton v-if="thread.state === 'completed' && thread.items.length > 0" :thread="thread" />
+
     <!-- Image Viewer Modal (teleported to avoid stacking context issues) -->
     <Teleport :to="overlayTarget" :disabled="!overlayTarget">
       <div
@@ -152,6 +155,7 @@ import type { AgentThread } from '../../composables/useAgentThreads';
 import { AGENT_SERVER_PORT_KEY } from '../../composables';
 import AgentTimeline from './AgentTimeline.vue';
 import ApplyMessageChip from './ApplyMessageChip.vue';
+import ExportButton from './ExportButton.vue';
 
 const props = defineProps<{
   thread: AgentThread;

@@ -267,6 +267,18 @@
             </svg>
           </button>
 
+          <!-- Mode Indicator -->
+          <ModeIndicator
+            v-if="hasOpenAIConfig !== undefined"
+            :input-text="modelValue"
+            :native-server-ready="nativeServerReady ?? false"
+            :has-open-a-i-config="hasOpenAIConfig ?? false"
+            :use-native-server="useNativeServer ?? true"
+            :text-only-mode="textOnlyMode ?? false"
+            @mode:switch="$emit('mode:switch', $event)"
+            @navigate:settings="$emit('navigate:settings')"
+          />
+
           <!-- Status Text -->
           <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
             <span
@@ -380,6 +392,18 @@
             </svg>
           </div>
 
+          <!-- Mode Indicator -->
+          <ModeIndicator
+            v-if="hasOpenAIConfig !== undefined"
+            :input-text="modelValue"
+            :native-server-ready="nativeServerReady ?? false"
+            :has-open-a-i-config="hasOpenAIConfig ?? false"
+            :use-native-server="useNativeServer ?? true"
+            :text-only-mode="textOnlyMode ?? false"
+            @mode:switch="$emit('mode:switch', $event)"
+            @navigate:settings="$emit('navigate:settings')"
+          />
+
           <!-- Status Text -->
           <div class="text-[11px] ml-1 flex items-center gap-1" :style="{ color: statusColor }">
             <span
@@ -404,6 +428,7 @@ import type { RequestState } from '../../composables/useAgentChat';
 import { useTextareaAutoResize } from '../../composables/useTextareaAutoResize';
 import ComposerDrawer from './ComposerDrawer.vue';
 import FakeCaretOverlay from './FakeCaretOverlay.vue';
+import ModeIndicator from './ModeIndicator.vue';
 
 const props = defineProps<{
   modelValue: string;
@@ -428,6 +453,11 @@ const props = defineProps<{
   availableReasoningEfforts?: readonly CodexReasoningEffort[];
   // Fake caret feature flag
   enableFakeCaret?: boolean;
+  // Mode indicator props
+  nativeServerReady?: boolean;
+  hasOpenAIConfig?: boolean;
+  useNativeServer?: boolean;
+  textOnlyMode?: boolean;
 }>();
 
 /**
@@ -557,6 +587,8 @@ const emit = defineEmits<{
   'reasoning-effort:change': [effort: CodexReasoningEffort];
   'session:settings': [];
   'session:reset': [];
+  'mode:switch': [mode: 'native' | 'openai'];
+  'navigate:settings': [];
 }>();
 
 const textareaRef = ref<HTMLTextAreaElement | null>(null);

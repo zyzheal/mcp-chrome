@@ -315,6 +315,138 @@
         </form>
       </section>
 
+      <!-- Native Server 配置部分 -->
+      <section class="settings-section">
+        <div class="section-header">
+          <div class="section-title-wrapper">
+            <svg class="section-icon" viewBox="0 0 24 24" width="20" height="20">
+              <path
+                fill="currentColor"
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+              />
+            </svg>
+            <h3 class="section-title">Native Server 配置</h3>
+          </div>
+          <span
+            class="status-badge"
+            :class="{
+              'status-success': nativeServerConnected && nativeServerRunning,
+              'status-warning': !nativeServerConnected && nativeServerRunning,
+              'status-error': !nativeServerRunning,
+            }"
+          >
+            {{
+              nativeServerRunning ? (nativeServerConnected ? '已连接' : '运行中 (外部)') : '未运行'
+            }}
+          </span>
+        </div>
+
+        <div class="native-server-content">
+          <!-- 状态显示 -->
+          <div class="status-row">
+            <span class="status-label">服务状态:</span>
+            <span
+              class="status-value"
+              :class="nativeServerRunning ? 'status-active' : 'status-inactive'"
+            >
+              {{ nativeServerRunning ? `运行中 (端口 ${nativeServerPort || '---'})` : '未运行' }}
+            </span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">Native Messaging:</span>
+            <span
+              class="status-value"
+              :class="nativeServerConnected ? 'status-active' : 'status-inactive'"
+            >
+              {{ nativeServerConnected ? '已连接' : '未连接' }}
+            </span>
+          </div>
+
+          <!-- 端口配置 -->
+          <div class="form-row">
+            <div class="form-field">
+              <label class="field-label">端口号</label>
+              <input
+                v-model.number="nativeServerPortInput"
+                class="form-input"
+                type="number"
+                min="1"
+                max="65535"
+                placeholder="12306"
+              />
+              <p class="field-hint">Native Server 监听的端口号，默认 12306</p>
+            </div>
+          </div>
+
+          <!-- 操作按钮 -->
+          <div class="form-actions">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              @click="refreshNativeServerStatus"
+              :disabled="nativeServerConnecting"
+            >
+              <svg
+                v-if="nativeServerConnecting"
+                class="spinner"
+                viewBox="0 0 24 24"
+                width="16"
+                height="16"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                  stroke="currentColor"
+                  stroke-width="3"
+                  fill="none"
+                  stroke-dasharray="31.4 31.4"
+                >
+                  <animateTransform
+                    attributeName="transform"
+                    type="rotate"
+                    from="0 12 12"
+                    to="360 12 12"
+                    dur="1s"
+                    repeatCount="indefinite"
+                  />
+                </circle>
+              </svg>
+              {{ nativeServerConnecting ? '连接中...' : '刷新状态' }}
+            </button>
+            <button
+              type="button"
+              class="btn"
+              :class="nativeServerConnected ? 'btn-danger' : 'btn-primary'"
+              @click="toggleNativeServerConnection"
+              :disabled="nativeServerConnecting"
+            >
+              <BoltIcon v-if="!nativeServerConnecting" class="btn-icon" />
+              {{
+                nativeServerConnecting
+                  ? '连接中...'
+                  : nativeServerConnected
+                    ? '断开连接'
+                    : '连接服务器'
+              }}
+            </button>
+          </div>
+
+          <!-- MCP 配置 JSON -->
+          <div v-if="nativeServerRunning" class="mcp-config-section">
+            <div class="mcp-config-header">
+              <span class="mcp-config-label">MCP 配置 JSON</span>
+              <button class="btn btn-sm btn-secondary" @click="copyMcpConfig">
+                {{ copyButtonText }}
+              </button>
+            </div>
+            <div class="mcp-config-content">
+              <pre class="mcp-config-json">{{ mcpConfigJson }}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <!-- 调试模式部分 -->
       <section class="settings-section">
         <div class="section-header">
@@ -407,6 +539,7 @@
 
 <script lang="ts" setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { NativeMessageType } from 'chrome-mcp-shared';
 
 const emit = defineEmits<{
   'navigate:chat': [];
@@ -468,6 +601,33 @@ const debugMode = ref({
   expiresAt: 0,
   countdown: '',
   countdownInterval: null as number | null,
+});
+
+// Native Server 状态
+const nativeServerPortInput = ref(12306);
+const nativeServerRunning = ref(false);
+const nativeServerConnected = ref(false);
+const nativeServerConnecting = ref(false);
+const copyButtonText = ref('复制');
+
+// MCP 配置 JSON
+const mcpConfigJson = computed(() => {
+  const port = nativeServerPortInput.value || 12306;
+  return JSON.stringify(
+    {
+      mcpServers: {
+        'chrome-mcp': {
+          command: 'chromium',
+          args: [
+            '--user-data-dir=/tmp/chrome-mcp-test',
+            `--open-browser-mcp-extension-config=http://127.0.0.1:${port}/extension-config`,
+          ],
+        },
+      },
+    },
+    null,
+    2,
+  );
 });
 
 // 预设配置
@@ -656,6 +816,86 @@ async function saveConfig() {
   }
 }
 
+async function toggleNativeServerConnection() {
+  if (nativeServerConnected.value) {
+    // 断开连接
+    try {
+      await chrome.runtime.sendMessage({
+        type: NativeMessageType.DISCONNECT_NATIVE,
+      });
+      nativeServerConnected.value = false;
+    } catch (error) {
+      console.error('Failed to disconnect native server:', error);
+    }
+  } else {
+    // 连接服务器
+    nativeServerConnecting.value = true;
+    try {
+      const response = await chrome.runtime.sendMessage({
+        type: NativeMessageType.CONNECT_NATIVE,
+        port: nativeServerPortInput.value,
+      });
+      nativeServerConnected.value = response?.connected ?? false;
+      if (nativeServerConnected.value) {
+        await refreshNativeServerStatus();
+      }
+    } catch (error) {
+      console.error('Failed to connect native server:', error);
+      nativeServerConnected.value = false;
+    } finally {
+      nativeServerConnecting.value = false;
+    }
+  }
+}
+
+async function refreshNativeServerStatus() {
+  nativeServerConnecting.value = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: 'get_server_status',
+    });
+    if (response?.serverStatus) {
+      nativeServerRunning.value = response.serverStatus.isRunning ?? false;
+      if (response.serverStatus.port) {
+        nativeServerPortInput.value = response.serverStatus.port;
+      }
+      if (typeof response.connected === 'boolean') {
+        nativeServerConnected.value = response.connected;
+      }
+    } else {
+      // 如果无法获取状态，尝试 HTTP probe
+      const port = nativeServerPortInput.value || 12306;
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 1000);
+        const res = await fetch(`http://127.0.0.1:${port}/ping`, {
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        nativeServerRunning.value = res.ok;
+      } catch {
+        nativeServerRunning.value = false;
+      }
+    }
+  } catch (error) {
+    console.error('Failed to refresh native server status:', error);
+  } finally {
+    nativeServerConnecting.value = false;
+  }
+}
+
+async function copyMcpConfig() {
+  try {
+    await navigator.clipboard.writeText(mcpConfigJson.value);
+    copyButtonText.value = '已复制!';
+    setTimeout(() => {
+      copyButtonText.value = '复制';
+    }, 2000);
+  } catch (error) {
+    console.error('Failed to copy MCP config:', error);
+  }
+}
+
 async function toggleDebugMode() {
   const port = await getServerPort();
   if (!port) return;
@@ -737,6 +977,7 @@ function applyPreset(preset: Preset) {
 // 生命周期
 onMounted(() => {
   loadConfig();
+  refreshNativeServerStatus();
 });
 
 onUnmounted(() => {
@@ -808,6 +1049,81 @@ onUnmounted(() => {
   background: var(--ac-surface, #ffffff);
   border: var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4);
   border-radius: var(--ac-radius-card, 12px);
+}
+
+.management-section {
+  margin-bottom: 12px;
+}
+
+.management-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(
+    135deg,
+    var(--ac-accent-subtle, rgba(217, 119, 87, 0.15)) 0%,
+    var(--ac-surface-muted, #f5f5f5) 100%
+  );
+  border: 1px solid var(--ac-border, #e7e5e4);
+  border-radius: var(--ac-radius-card, 12px);
+}
+
+.management-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--ac-accent, #d97757);
+  border-radius: var(--ac-radius-button, 12px);
+  color: var(--ac-accent-contrast, #ffffff);
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(217, 119, 87, 0.3);
+}
+
+.management-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.management-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ac-text, #1a1a1a);
+  margin: 0 0 4px 0;
+}
+
+.management-desc {
+  font-size: 13px;
+  color: var(--ac-text-muted, #737373);
+  margin: 0;
+}
+
+.management-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: var(--ac-accent, #d97757);
+  border: none;
+  border-radius: var(--ac-radius-button, 10px);
+  color: var(--ac-accent-contrast, #ffffff);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 150ms) ease;
+  white-space: nowrap;
+}
+
+.management-btn:hover {
+  background: var(--ac-accent-hover, #c4664a);
+  transform: translateX(2px);
+  box-shadow: 0 4px 12px rgba(217, 119, 87, 0.4);
+}
+
+.management-btn span {
+  flex: 1;
 }
 
 .section-header {
@@ -1182,6 +1498,66 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+/* Native Server Content */
+.native-server-content {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mcp-config-section {
+  margin-top: 8px;
+}
+
+.mcp-config-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+}
+
+.mcp-config-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ac-text, #262626);
+}
+
+.mcp-config-content {
+  background: var(--ac-surface-muted, #f5f5f5);
+  border-radius: var(--ac-radius-inner, 8px);
+  padding: 12px;
+  overflow-x: auto;
+}
+
+.mcp-config-json {
+  margin: 0;
+  font-size: 12px;
+  font-family: var(--ac-font-mono, 'Monaco', 'Menlo', 'Ubuntu Mono', monospace);
+  color: var(--ac-text, #262626);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.btn-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.btn-danger {
+  background: var(--ac-danger, #ef4444);
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  box-shadow: var(--ac-shadow-float, 0 4px 12px rgba(0, 0, 0, 0.15));
+}
+
+.status-value.status-inactive {
+  color: var(--ac-text-muted, #737373);
+}
+
 .status-row {
   display: flex;
   align-items: center;
@@ -1341,81 +1717,5 @@ input:checked + .slider:before {
 
 .settings-content::-webkit-scrollbar-thumb:hover {
   background: var(--ac-text-muted, #a3a3a3);
-}
-
-/* Management Section */
-.management-section {
-  margin-bottom: 12px;
-}
-
-.management-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  background: linear-gradient(
-    135deg,
-    var(--ac-accent-subtle, rgba(217, 119, 87, 0.15)) 0%,
-    var(--ac-surface-muted, #f5f5f5) 100%
-  );
-  border: 1px solid var(--ac-border, #e7e5e4);
-  border-radius: var(--ac-radius-card, 12px);
-}
-
-.management-icon-wrapper {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--ac-accent, #d97757);
-  border-radius: var(--ac-radius-button, 12px);
-  color: var(--ac-accent-contrast, #ffffff);
-  flex-shrink: 0;
-  box-shadow: 0 4px 12px rgba(217, 119, 87, 0.3);
-}
-
-.management-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.management-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--ac-text, #1a1a1a);
-  margin: 0 0 4px 0;
-}
-
-.management-desc {
-  font-size: 13px;
-  color: var(--ac-text-muted, #737373);
-  margin: 0;
-}
-
-.management-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px 20px;
-  background: var(--ac-accent, #d97757);
-  border: none;
-  border-radius: var(--ac-radius-button, 10px);
-  color: var(--ac-accent-contrast, #ffffff);
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all var(--ac-motion-fast, 150ms) ease;
-  white-space: nowrap;
-}
-
-.management-btn:hover {
-  background: var(--ac-accent-hover, #c4664a);
-  transform: translateX(2px);
-  box-shadow: 0 4px 12px rgba(217, 119, 87, 0.4);
-}
-
-.management-btn span {
-  flex: 1;
 }
 </style>
