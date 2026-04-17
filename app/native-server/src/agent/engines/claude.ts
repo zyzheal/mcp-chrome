@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import type { AgentEngine, EngineExecutionContext, EngineInitOptions } from './types';
 import type { AgentMessage, RealtimeEvent } from '../types';
@@ -107,8 +109,25 @@ export class ClaudeEngine implements AgentEngine {
     }
 
     // Resolve model
-    const resolvedModel =
-      model?.trim() || process.env.CLAUDE_DEFAULT_MODEL || 'claude-sonnet-4-20250514';
+    // Priority: options.model > saved config model > env > default
+    let resolvedModel = model?.trim() || '';
+    if (!resolvedModel) {
+      // Try saved OpenAI-compatible config
+      try {
+        const configDir = path.join(os.homedir(), '.mcp-chrome');
+        const configFile = path.join(configDir, 'openai-config.json');
+        if (fs.existsSync(configFile)) {
+          const raw = fs.readFileSync(configFile, 'utf-8');
+          const savedConfig = JSON.parse(raw);
+          resolvedModel = savedConfig.model || '';
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (!resolvedModel) {
+      resolvedModel = process.env.CLAUDE_DEFAULT_MODEL || 'claude-sonnet-4-20250514';
+    }
 
     // State management
     const stderrBuffer: string[] = [];
@@ -1271,7 +1290,55 @@ export class ClaudeEngine implements AgentEngine {
       env.PATH = [nodeBinDir, currentPath].filter(Boolean).join(path.delimiter);
     }
 
-    // Only detect CCR if explicitly enabled for this project
+    // Always check for saved OpenAI-compatible config (from extension settings)
+    // This takes priority over existing env vars to support custom API endpoints
+    try {
+      const configDir = path.join(os.homedir(), '.mcp-chrome');
+      const configFile = path.join(configDir, 'openai-config.json');
+      if (fs.existsSync(configFile)) {
+        const raw = fs.readFileSync(configFile, 'utf-8');
+        const savedConfig = JSON.parse(raw);
+        if (savedConfig.baseUrl && savedConfig.apiKey && savedConfig.model) {
+          env.ANTHROPIC_BASE_URL = savedConfig.baseUrl;
+          env.ANTHROPIC_AUTH_TOKEN = savedConfig.apiKey;
+          env.ANTHROPIC_API_KEY = savedConfig.apiKey; // Also set ANTHROPIC_API_KEY for SDK compatibility
+          env.CLAUDE_DEFAULT_MODEL = savedConfig.model;
+          console.error(
+            `[ClaudeEngine] Using saved OpenAI-compatible config: ${savedConfig.model} at ${savedConfig.baseUrl}`,
+          );
+        }
+      }
+    } catch (err) {
+      console.error(`[ClaudeEngine] Failed to load saved config: ${err}`);
+    }
+
+    // Also check ~/.claude/settings.json for env overrides
+    if (!env.ANTHROPIC_BASE_URL || !env.ANTHROPIC_API_KEY) {
+      try {
+        const claudeSettingsPath = path.join(os.homedir(), '.claude', 'settings.json');
+        if (fs.existsSync(claudeSettingsPath)) {
+          const raw = fs.readFileSync(claudeSettingsPath, 'utf-8');
+          const settings = JSON.parse(raw);
+          if (settings.env) {
+            if (settings.env.ANTHROPIC_BASE_URL && !env.ANTHROPIC_BASE_URL) {
+              env.ANTHROPIC_BASE_URL = settings.env.ANTHROPIC_BASE_URL;
+            }
+            if (settings.env.ANTHROPIC_API_KEY && !env.ANTHROPIC_API_KEY) {
+              env.ANTHROPIC_API_KEY = settings.env.ANTHROPIC_API_KEY;
+              env.ANTHROPIC_AUTH_TOKEN = settings.env.ANTHROPIC_API_KEY;
+            }
+            if (settings.env.ANTHROPIC_MODEL && !env.CLAUDE_DEFAULT_MODEL) {
+              env.CLAUDE_DEFAULT_MODEL = settings.env.ANTHROPIC_MODEL;
+            }
+            console.error(`[ClaudeEngine] Loaded env from ~/.claude/settings.json`);
+          }
+        }
+      } catch (err) {
+        console.error(`[ClaudeEngine] Failed to load ~/.claude/settings.json: ${err}`);
+      }
+    }
+
+    // Only detect CCR if explicitly enabled for this project and no saved config override
     if (useCcr && !env.ANTHROPIC_BASE_URL) {
       try {
         const ccrResult = await detectCcr();
