@@ -90,6 +90,8 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_TAB_CLOSE: 'quick_panel_tab_close',
   // Agent status query
   GET_AGENT_STATUS: 'get_agent_status',
+  // Tool execution bridge (OpenAI direct mode → background tools)
+  EXECUTE_TOOL_CALL: 'execute_tool_call',
 } as const;
 
 // Offscreen message types

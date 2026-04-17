@@ -756,6 +756,29 @@ export const initNativeHostListener = () => {
       return true;
     }
 
+    // EXECUTE_TOOL_CALL: Bridge for OpenAI direct mode to call browser tools
+    if (message.type === BACKGROUND_MESSAGE_TYPES.EXECUTE_TOOL_CALL) {
+      const { toolName, args, requestId } = message.payload || {};
+      console.log(`[NativeHost] EXECUTE_TOOL_CALL: ${toolName} (requestId: ${requestId})`);
+
+      handleCallTool({ name: toolName, args })
+        .then((result) => {
+          sendResponse({
+            success: true,
+            requestId,
+            result,
+          });
+        })
+        .catch((error) => {
+          sendResponse({
+            success: false,
+            requestId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+      return true;
+    }
+
     if (message.type === BACKGROUND_MESSAGE_TYPES.REFRESH_SERVER_STATUS) {
       loadServerStatus()
         .then((storedStatus) => {
