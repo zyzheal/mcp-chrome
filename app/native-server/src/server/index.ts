@@ -28,7 +28,7 @@ import { AgentChatService } from '../agent/chat-service';
 import { CodexEngine } from '../agent/engines/codex';
 import { ClaudeEngine } from '../agent/engines/claude';
 import { closeDb } from '../agent/db';
-import { registerAgentRoutes } from './routes';
+import { registerAgentRoutes, registerDebugRoutes, registerSettingsRoutes } from './routes';
 
 // ============================================================
 // Types
@@ -99,6 +99,12 @@ export class Server {
       streamManager: this.agentStreamManager,
       chatService: this.agentChatService,
     });
+
+    // Debug mode routes
+    registerDebugRoutes(this.fastify);
+
+    // Settings routes
+    registerSettingsRoutes(this.fastify);
 
     // MCP routes
     this.setupMcpRoutes();
@@ -182,6 +188,7 @@ export class Server {
         });
 
         const server = getMcpServer();
+        console.error('[Server] SSE MCP connection established');
         await server.connect(transport);
 
         reply.raw.write(':\n\n');
@@ -236,6 +243,7 @@ export class Server {
           }
         };
         await getMcpServer().connect(transport);
+        console.error('[Server] StreamableHTTP MCP connection established');
       } else {
         reply.code(HTTP_STATUS.BAD_REQUEST).send({ error: ERROR_MESSAGES.INVALID_MCP_REQUEST });
         return;
@@ -324,9 +332,13 @@ export class Server {
     }
 
     if (this.isRunning) {
+      console.error('[Server] Start called but already running, port:', port);
       return;
     }
 
+    console.error(
+      `[Server] Starting Fastify server on port ${port}, host ${SERVER_CONFIG.HOST}...`,
+    );
     try {
       await this.fastify.listen({ port, host: SERVER_CONFIG.HOST });
 
@@ -335,8 +347,12 @@ export class Server {
       process.env.MCP_HTTP_PORT = String(port);
 
       this.isRunning = true;
+      console.error(`[Server] Server started successfully on http://${SERVER_CONFIG.HOST}:${port}`);
+      console.error(`[Server] MCP endpoint: http://${SERVER_CONFIG.HOST}:${port}/mcp`);
+      console.error(`[Server] Agent API: http://${SERVER_CONFIG.HOST}:${port}/agent/`);
     } catch (err) {
       this.isRunning = false;
+      console.error(`[Server] Failed to start server on port ${port}:`, err);
       throw err;
     }
   }

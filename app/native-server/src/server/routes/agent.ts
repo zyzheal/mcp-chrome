@@ -56,7 +56,15 @@ import type {
 } from 'chrome-mcp-shared';
 
 // Valid engine names for validation
-const VALID_ENGINE_NAMES: readonly EngineName[] = ['claude', 'codex', 'cursor', 'qwen', 'glm'];
+const VALID_ENGINE_NAMES: readonly EngineName[] = [
+  'claude',
+  'codex',
+  'cursor',
+  'qwen',
+  'glm',
+  'kimi',
+  'minimax',
+];
 
 function isValidEngineName(name: string): name is EngineName {
   return VALID_ENGINE_NAMES.includes(name as EngineName);
