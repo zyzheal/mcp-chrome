@@ -8,8 +8,10 @@
     "pkg/"
   ],
   "scripts": {
-    "build": "wasm-pack build --target web --out-dir pkg --release",
-    "build:dev": "wasm-pack build --target web --out-dir pkg --dev",
+    "check:env": "bash ./scripts/check-env.sh",
+    "build": "bash ./scripts/check-env.sh && wasm-pack build --target web --out-dir pkg --release",
+    "build:dev": "bash ./scripts/check-env.sh && wasm-pack build --target web --out-dir pkg --dev",
+    "build:force": "wasm-pack build --target web --out-dir pkg --release",
     "clean": "rimraf pkg/",
     "test": "wasm-pack test --headless --firefox"
   },
