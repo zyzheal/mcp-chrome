@@ -63,9 +63,6 @@ export class NativeMessagingHost {
     intervalId: null,
   };
   private isShuttingDown = false;
-  private messageQueue: Array<{ message: any; resolve: () => void; reject: (err: Error) => void }> =
-    [];
-  private isProcessingQueue = false;
 
   public setServer(serverInstance: Server): void {
     this.associatedServer = serverInstance;
@@ -89,37 +86,39 @@ export class NativeMessagingHost {
   // ============================================================
 
   private setupMessageHandling(): void {
-    let buffer = Buffer.alloc(0);
+    let buffer = Buffer.alloc(64 * 1024); // Pre-allocate 64KB read buffer
+    let bufferOffset = 0;
     let expectedLength = -1;
 
     const processAvailable = async () => {
       let processed = 0;
       while (processed < MAX_MESSAGES_PER_TICK) {
         if (expectedLength === -1) {
-          if (buffer.length < 4) break;
+          if (bufferOffset < 4) break;
           expectedLength = buffer.readUInt32LE(0);
-          // FIX: Use subarray instead of deprecated slice
-          buffer = buffer.subarray(4);
+          // Shift buffer: remove the 4-byte header
+          buffer.copyWithin(0, 4, bufferOffset);
+          bufferOffset -= 4;
 
           if (expectedLength <= 0 || expectedLength > MAX_MESSAGE_SIZE_BYTES) {
             this.sendError(`Invalid message length: ${expectedLength}`, 'INVALID_MESSAGE_LENGTH');
             expectedLength = -1;
-            buffer = Buffer.alloc(0);
+            bufferOffset = 0;
             break;
           }
         }
 
-        if (buffer.length < expectedLength) break;
+        if (bufferOffset < expectedLength) break;
 
-        // FIX: Use subarray instead of deprecated slice
         const messageBuffer = buffer.subarray(0, expectedLength);
-        buffer = buffer.subarray(expectedLength);
+        // Shift remaining data to front
+        buffer.copyWithin(0, expectedLength, bufferOffset);
+        bufferOffset -= expectedLength;
         expectedLength = -1;
         processed++;
 
         try {
           const message = JSON.parse(messageBuffer.toString());
-          // FIX: Add await to properly handle async message processing
           await this.handleMessage(message);
         } catch (error: any) {
           this.sendError(`Failed to parse message: ${error.message}`, 'PARSE_ERROR');
@@ -134,8 +133,15 @@ export class NativeMessagingHost {
     stdin.on('readable', () => {
       let chunk;
       while ((chunk = stdin.read()) !== null) {
-        buffer = Buffer.concat([buffer, chunk]);
-        // Start processing (non-blocking)
+        // Expand buffer if needed (double size)
+        while (bufferOffset + chunk.length > buffer.length) {
+          const newBuf = Buffer.alloc(buffer.length * 2);
+          buffer.copy(newBuf, 0, bufferOffset);
+          buffer = newBuf;
+          bufferOffset = 0;
+        }
+        chunk.copy(buffer, bufferOffset);
+        bufferOffset += chunk.length;
         processAvailable().catch((err) => {
           console.error('[NativeMessagingHost] Error in processAvailable:', err.message);
         });

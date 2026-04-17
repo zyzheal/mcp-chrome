@@ -31,6 +31,7 @@ Chrome MCP Server 是一个基于chrome插件的 **模型上下文协议 (MCP) �
 - 🔍 **智能内容分析**：AI 驱动的文本提取和相似度匹配
 - 🌐 **20+ 工具**：支持截图、网络监控、交互操作、书签管理、浏览历史等20多种工具
 - 🚀 **SIMD 加速 AI**：自定义 WebAssembly SIMD 优化，向量运算速度提升 4-8 倍
+- 🦀 **Rust WASM 核心**：协议、选择器、流程引擎、MCP 工具等可移植逻辑用 Rust 编写，编译为单文件 WASM，扩展与 Native Server 共享同一份核心代码
 
 ## 🆚 与同类项目对比
 
@@ -279,9 +280,9 @@ https://github.com/user-attachments/assets/83de4008-bb7e-494d-9b0f-98325cfea592
 
 我们对 Chrome MCP Server 的未来发展有着激动人心的计划：
 
-- [ ] 身份认证
+- [x] Rust WASM 核心（协议、选择器、流程引擎等可移植逻辑）
 
-- [ ] 录制与回放
+- [ ] 身份认证
 
 - [ ] 工作流自动化
 
@@ -297,7 +298,9 @@ https://github.com/user-attachments/assets/83de4008-bb7e-494d-9b0f-98325cfea592
 
 ## 📚 更多文档
 
-- [架构设计](docs/ARCHITECTURE_zh.md) - 详细的技术架构说明
+- [架构设计](docs/PROJECT_OVERVIEW.md) - 详细的技术架构说明
+- [Native WASM 核心](docs/NATIVE_WASM.md) - Rust WASM 模块文档
+- [构建与发布](docs/BUILD_RELEASE.md) - 构建流水线、npm 发布、扩展打包
 - [工具列表](docs/TOOLS_zh.md) - 完整的工具 API 文档
 - [故障排除](docs/TROUBLESHOOTING_zh.md) - 常见问题解决方案
 

@@ -208,7 +208,8 @@ class FlowIdCache {
 
       if (response && response.status === 'success' && Array.isArray(response.items)) {
         this.flows.clear();
-        for (const item of response.items) {
+        const limitedItems = response.items.slice(0, MAX_CACHE_ENTRIES);
+        for (const item of limitedItems) {
           const info: FlowInfo = {
             id: item.id,
             slug: item.slug,

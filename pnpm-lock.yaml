@@ -242,6 +242,12 @@ importers:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@22.19.17)(typescript@5.9.3)
 
+  packages/native-wasm:
+    devDependencies:
+      rimraf:
+        specifier: ^5.0.0
+        version: 5.0.10
+
   packages/shared:
     dependencies:
       '@modelcontextprotocol/sdk':

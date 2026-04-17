@@ -13,6 +13,7 @@ import {
 import { BrowserType, parseBrowserType, detectInstalledBrowsers } from './scripts/browser-config';
 import { runDoctor } from './scripts/doctor';
 import { runReport } from './scripts/report';
+import { runDbCleanup } from './scripts/db-cleanup';
 
 program
   .version(require('../package.json').version)
@@ -223,6 +224,27 @@ program
       process.exit(exitCode);
     } catch (error: any) {
       console.error(colorText(`Report failed: ${error.message}`, 'red'));
+      process.exit(1);
+    }
+  });
+
+// Clean up orphaned and invalid data from the database
+program
+  .command('db-cleanup')
+  .description('Clean up orphaned and invalid data from the agent database')
+  .option('--apply', 'Actually perform cleanup (default: dry run)')
+  .option('--stats', 'Show database statistics only')
+  .option('--db <path>', 'Custom database file path')
+  .action(async (options) => {
+    try {
+      const exitCode = await runDbCleanup({
+        apply: Boolean(options.apply),
+        statsOnly: Boolean(options.stats),
+        dbPath: options.db,
+      });
+      process.exit(exitCode);
+    } catch (error: any) {
+      console.error(colorText(`DB cleanup failed: ${error.message}`, 'red'));
       process.exit(1);
     }
   });

@@ -1,0 +1,12 @@
+{
+  "name": "native-wasm",
+  "version": "0.1.0",
+  "files": [
+    "native_wasm_bg.wasm",
+    "native_wasm.js",
+    "native_wasm.d.ts"
+  ],
+  "module": "native_wasm.js",
+  "types": "native_wasm.d.ts",
+  "sideEffects": false
+}

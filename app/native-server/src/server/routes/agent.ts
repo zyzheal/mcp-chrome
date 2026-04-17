@@ -343,7 +343,16 @@ export function registerAgentRoutes(fastify: FastifyInstance, options: AgentRout
         return reply.status(HTTP_STATUS.CREATED).send({ session });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        fastify.log.error({ err: error }, 'Failed to create session');
+        fastify.log.error({ err: error, projectId, body }, 'Failed to create session');
+
+        // Handle UNIQUE constraint violations gracefully
+        if (message.includes('UNIQUE constraint') || message.includes('duplicate')) {
+          return reply.status(409).send({
+            error: 'Session already exists with this ID',
+          });
+        }
+
+        // Include the error message in the response for debugging
         return reply.status(HTTP_STATUS.INTERNAL_SERVER_ERROR).send({
           error: message || ERROR_MESSAGES.INTERNAL_SERVER_ERROR,
         });

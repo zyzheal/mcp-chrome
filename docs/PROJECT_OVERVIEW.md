@@ -37,6 +37,7 @@ MCP-Chrome 是一个基于 Chrome 扩展的 **Model Context Protocol (MCP) 服�
 | **跨标签页**   | 支持多标签页上下文操作                         |
 | **语义搜索**   | 内置 WASM SIMD 加速的向量数据库                |
 | **20+ 工具**   | 截图、网络监控、交互操作、书签管理等           |
+| **WASM 核心**  | Rust 编译的单文件 WASM，扩展与服务器共享逻辑   |
 
 ### 1.3 技术栈
 
@@ -45,7 +46,8 @@ MCP-Chrome 是一个基于 Chrome 扩展的 **Model Context Protocol (MCP) 服�
 | Chrome 扩展   | WXT, Vue 3, Vite, TailwindCSS 4, Manifest V3               |
 | Native Server | Node.js, TypeScript, Fastify, MCP SDK, SQLite, Drizzle ORM |
 | AI/ML         | Transformers.js, HNSW 向量库, WebAssembly SIMD             |
-| 构建工具      | pnpm, wasm-pack, tsup                                      |
+| WASM 核心     | Rust, wasm-bindgen, serde（单文件 WASM，双端共享逻辑）     |
+| 构建工具      | pnpm, wasm-pack, tsup, cargo                               |
 
 ---
 
@@ -57,10 +59,23 @@ MCP-Chrome 是一个基于 Chrome 扩展的 **Model Context Protocol (MCP) 服�
 mcp-chrome/
 ├── app/
 │   ├── chrome-extension/     # Chrome 扩展（前端 UI + 扩展功能）
+│   │   └── native-wasm/      # WASM 产物（构建时自动复制）
 │   └── native-server/        # 原生服务器（MCP 协议 + HTTP 服务 + Agent）
+│       └── native-wasm/      # WASM 产物（构建时自动复制）
 ├── packages/
 │   ├── shared/               # 共享类型和工具
-│   └── wasm-simd/            # WebAssembly SIMD 加速模块
+│   ├── wasm-simd/            # WebAssembly SIMD 加速模块
+│   └── native-wasm/          # Rust WASM 核心逻辑（协议、选择器、流程引擎、MCP 工具）
+│       ├── src/
+│       │   ├── lib.rs        # WASM 绑定入口
+│       │   ├── protocol.rs   # Native Messaging 协议（4字节 LE 帧）
+│       │   ├── selector.rs   # CSS 选择器生成与元素指纹
+│       │   ├── reconnect.rs  # 指数退避重连管理器
+│       │   ├── flow_engine.rs# 录制回放流程引擎
+│       │   └── mcp.rs        # MCP 协议工具与缓存
+│       └── scripts/
+│           ├── build.sh      # 完整流水线：test → wasm → copy
+│           └── build-wasm.sh # WASM 编译
 └── docs/                     # 项目文档
 ```
 
@@ -79,6 +94,13 @@ mcp-chrome/
 │  │ HTTP 服务  │  │ (STDIO/    │  │ (Claude/Codex)   │  │
 │  │            │  │ Streamable)│  │                  │  │
 │  └────────────┘  └────────────┘  └──────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ native-wasm (WASM)                                │  │
+│  │ - Native Messaging 协议帧解析                     │  │
+│  │ - 心跳状态机 / 重连管理                           │  │
+│  │ - Flow 流程引擎（变量插值、条件执行）              │  │
+│  │ - MCP 协议工具 / 缓存                             │  │
+│  └──────────────────────────────────────────────────┘  │
 └──────────────────────┬──────────────────────────────────┘
                        │ Native Messaging Protocol (STDIO)
 ┌──────────────────────▼──────────────────────────────────┐
@@ -88,6 +110,14 @@ mcp-chrome/
 │  │ Script     │  │ (Vue UI)   │  │ (20+ 浏览器工具) │  │
 │  │            │  │            │  │                  │  │
 │  └────────────┘  └────────────┘  └──────────────────┘  │
+│  ┌──────────────────────────────────────────────────┐  │
+│  │ native-wasm (WASM)                                │  │
+│  │ - CSS 选择器生成 / 元素指纹                       │  │
+│  │ - 协议帧序列化 / 增量解析器                       │  │
+│  │ - 重连管理器（指数退避 + 抖动）                    │  │
+│  │ - Flow 流程引擎（录制回放状态机）                  │  │
+│  │ - MCP 协议工具 / 缓存                             │  │
+│  └──────────────────────────────────────────────────┘  │
 │  ┌──────────────────────────────────────────────────┐  │
 │  │ Record-Replay V3 引擎 (DAG 录制回放)             │  │
 │  └──────────────────────────────────────────────────┘  │
@@ -370,6 +400,84 @@ session.engineName > request.cliPreference > project.preferredCli > 默认引擎
 4. 引擎返回 session ID → 更新 sessions.engineSessionId
 5. 下次发送 → 使用 engineSessionId 恢复上下文
 ```
+
+---
+
+## 4.x Native WASM 核心（Rust）
+
+`native-wasm` 是用 Rust 编写的 WebAssembly 模块，将 Chrome 扩展和 Native Server 的**共享可移植逻辑**提取为单文件 WASM，在两端复用同一份代码。
+
+### 4.x.1 设计动机
+
+```
+问题：Chrome 扩展（JS）和 Native Server（Node.js）中有大量相同的逻辑：
+  - Native Messaging 协议帧解析
+  - CSS 选择器生成与元素指纹
+  - 录制回放流程引擎
+  - MCP 协议工具与缓存
+
+旧方案：在两端各维护一份 TS 实现 → 逻辑不一致、修复需改两处
+
+新方案：用 Rust 编写核心逻辑，编译为 WASM，两端共享 → 单一真实源
+```
+
+### 4.x.2 模块结构
+
+| 模块        | 文件             | 功能                                                            |
+| ----------- | ---------------- | --------------------------------------------------------------- |
+| protocol    | `protocol.rs`    | 4 字节 LE 长度前缀帧、增量解析器、心跳状态机、请求追踪          |
+| selector    | `selector.rs`    | 9 级 CSS 选择器策略、元素指纹、稳定性评分、定位器映射           |
+| reconnect   | `reconnect.rs`   | 指数退避（500ms→60s）、抖动、冷却模式、连接模式切换             |
+| flow_engine | `flow_engine.rs` | 14 种步骤类型的状态机、变量插值、条件执行、MCP 工具定义生成     |
+| mcp         | `mcp.rs`         | MCP 请求/响应、工具列表缓存（TTL 5min）、Flow ID 缓存、会话管理 |
+
+### 4.x.3 WASM API 总览
+
+```javascript
+import init, * as wasm from './native-wasm/native_wasm.js';
+await init();
+
+// 协议帧
+wasm.frameMessage(jsonStr); // JSON → base64(4B LE 长度 + JSON)
+wasm.parseMessage(base64Data); // base64 → JSON
+
+// 心跳 & 重连
+new wasm.HeartbeatState(intervalMs, timeoutMs);
+new wasm.ReconnectState();
+
+// 选择器引擎
+wasm.generateSelectors(elementJson);
+wasm.generateFingerprint(elementJson);
+wasm.fingerprintSimilarity(fpA, fpB);
+wasm.validateSelector(selectorStr);
+
+// 流程引擎
+wasm.validateFlowVariables(flowJson, variablesJson);
+wasm.flowToToolDefinition(flowJson);
+wasm.getFlowStatus(flowJson, variablesJson);
+
+// MCP 协议
+wasm.createMcpToolCall(name, argsJson);
+wasm.createMcpListTools();
+wasm.createMcpSuccess(resultJson);
+wasm.createMcpError(code, message);
+new wasm.ToolListCache();
+new wasm.FlowIdCache();
+```
+
+### 4.x.4 构建流水线
+
+```
+pnpm run build:native-wasm
+  │
+  ├─ [1/3] cargo test          # 运行 27 个单元测试
+  ├─ [2/3] wasm-pack build     # 编译 release 模式 WASM
+  └─ [3/3] 复制到消费方
+       ├─ app/chrome-extension/native-wasm/
+       └─ app/native-server/native-wasm/
+```
+
+产物：`native_wasm_bg.wasm`（~460KB）、`native_wasm.js`（ES 模块绑定）、`native_wasm.d.ts`（类型声明）
 
 ---
 
@@ -788,6 +896,8 @@ Sidepanel UI 实时更新
 
 ### 8.1 开发环境设置
 
+完整构建与发布流程请参考：[BUILD_RELEASE.md](BUILD_RELEASE.md)
+
 ```bash
 # 安装依赖
 pnpm install
@@ -800,11 +910,35 @@ pnpm dev:shared    # 共享包
 pnpm dev:native    # Native Server
 pnpm dev:extension # Chrome 扩展
 
-# 构建
+# 构建所有包（含 native-wasm）
 pnpm build
+
+# 仅构建 native-wasm（Rust → WASM → 复制到消费方）
+pnpm run build:native-wasm
 
 # 构建 WASM SIMD 模块
 pnpm build:wasm
+```
+
+### 8.1.1 native-wasm 专用命令
+
+在 `packages/native-wasm` 目录下：
+
+```bash
+# 完整流水线：cargo test → wasm-pack build → 复制到消费方
+pnpm run build
+
+# 仅 WASM 编译（release 模式）
+pnpm run build:wasm
+
+# 仅 WASM 编译（debug 模式，带符号）
+pnpm run build:wasm:dev
+
+# 运行 27 个 Rust 单元测试
+pnpm run test
+
+# 清理产物
+pnpm run clean
 ```
 
 ### 8.2 代码规范
@@ -824,6 +958,12 @@ pnpm build:wasm
 | MCP STDIO Server | `app/native-server/src/mcp/mcp-server-stdio.ts`                             |
 | Record-Replay V3 | `app/chrome-extension/entrypoints/background/record-replay-v3/bootstrap.ts` |
 | Tools 系统       | `app/chrome-extension/entrypoints/background/tools/index.ts`                |
+| native-wasm      | `packages/native-wasm/src/lib.rs`（WASM 绑定）                              |
+| - protocol       | `packages/native-wasm/src/protocol.rs`（消息协议）                          |
+| - selector       | `packages/native-wasm/src/selector.rs`（选择器引擎）                        |
+| - reconnect      | `packages/native-wasm/src/reconnect.rs`（重连管理）                         |
+| - flow_engine    | `packages/native-wasm/src/flow_engine.rs`（流程引擎）                       |
+| - mcp            | `packages/native-wasm/src/mcp.rs`（MCP 协议）                               |
 
 ### 8.4 调试技巧
 

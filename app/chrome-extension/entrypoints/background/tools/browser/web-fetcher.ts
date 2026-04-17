@@ -70,7 +70,7 @@ class WebFetcherTool extends BaseBrowserToolExecutor {
         }
       } else {
         // Use active tab (prefer specified window)
-        const tab =
+        tab =
           typeof windowId === 'number'
             ? (await chrome.tabs.query({ active: true, windowId }))[0]
             : await queryActiveTab();

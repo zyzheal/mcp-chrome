@@ -208,17 +208,40 @@ function toRRError(err: unknown, fallback: { code: string; message: string }): R
 /**
  * Serial queue for write operations
  * Ensures event ordering and reduces write races
+ * Uses an async drain pattern instead of chained promises to avoid unbounded memory growth.
  */
 class SerialQueue {
-  private tail: Promise<void> = Promise.resolve();
+  private queue: Array<() => Promise<unknown>> = [];
+  private pending: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = [];
+  private running = false;
 
   run<T>(fn: () => Promise<T>): Promise<T> {
-    const next = this.tail.then(fn, fn);
-    this.tail = next.then(
-      () => undefined,
-      () => undefined,
-    );
-    return next;
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push(fn as () => Promise<unknown>);
+      this.pending.push({ resolve: resolve as (v: unknown) => void, reject });
+      this.drain();
+    });
+  }
+
+  private drain(): void {
+    if (this.running) return;
+    const fn = this.queue.shift();
+    const pending = this.pending.shift();
+    if (!fn || !pending) return;
+    this.running = true;
+    fn()
+      .then(pending.resolve, pending.reject)
+      .finally(() => {
+        this.running = false;
+        this.drain();
+      });
+  }
+
+  /**
+   * Get approximate queue depth (for monitoring)
+   */
+  get depth(): number {
+    return this.queue.length;
   }
 }
 

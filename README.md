@@ -33,6 +33,7 @@ Chrome MCP Server is a Chrome extension-based **Model Context Protocol (MCP) ser
 - 🔍 **Smart Content Analysis**: AI-powered text extraction and similarity matching
 - 🌐 **20+ Tools**: Support for screenshots, network monitoring, interactive operations, bookmark management, browsing history, and 20+ other tools
 - 🚀 **SIMD-Accelerated AI**: Custom WebAssembly SIMD optimization for 4-8x faster vector operations
+- 🦀 **Rust WASM Core**: Portable protocol, selector, flow engine, and MCP logic compiled to single WASM file, shared between extension and native server
 
 ## 🆚 Comparison with Similar Projects
 
@@ -285,8 +286,8 @@ We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for
 
 We have exciting plans for the future development of Chrome MCP Server:
 
+- [x] Rust WASM Core (portable protocol, selector engine, flow engine)
 - [ ] Authentication
-- [ ] Recording and Playback
 - [ ] Workflow Automation
 - [ ] Enhanced Browser Support (Firefox Extension)
 
@@ -300,6 +301,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📚 More Documentation
 
-- [Architecture Design](docs/ARCHITECTURE.md) - Detailed technical architecture documentation
+- [Architecture Design](docs/PROJECT_OVERVIEW.md) - Detailed technical architecture
+- [Native WASM Core](docs/NATIVE_WASM.md) - Rust WASM module documentation
+- [Build & Release](docs/BUILD_RELEASE.md) - Build pipeline, npm publish, extension zip
 - [TOOLS API](docs/TOOLS.md) - Complete tool API documentation
 - [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issue solutions

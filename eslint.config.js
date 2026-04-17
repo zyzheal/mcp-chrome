@@ -24,6 +24,7 @@ export default tseslint.config(
       'stats-*.json',
       'pnpm-lock.yaml',
       '**/workers/**',
+      '**/native-wasm/**',
       'app/**/workers/**',
       'packages/**/workers/**',
       'test-inject-script.js',

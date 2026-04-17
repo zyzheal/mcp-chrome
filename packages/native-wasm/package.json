@@ -1,0 +1,35 @@
+{
+  "name": "@chrome-mcp/native-wasm",
+  "version": "0.1.0",
+  "description": "Portable core logic for Chrome MCP Extension + Native Server compiled to WebAssembly",
+  "main": "pkg/native_wasm.js",
+  "types": "pkg/native_wasm.d.ts",
+  "files": [
+    "pkg/"
+  ],
+  "scripts": {
+    "build": "bash ./scripts/build.sh",
+    "build:dev": "bash ./scripts/build.sh --dev",
+    "build:wasm": "bash ./scripts/build-wasm.sh",
+    "build:wasm:dev": "bash ./scripts/build-wasm.sh --dev",
+    "test": "cargo test",
+    "clean": "rimraf pkg/ target/"
+  },
+  "keywords": [
+    "wasm",
+    "webassembly",
+    "mcp",
+    "chrome-extension",
+    "native-messaging"
+  ],
+  "author": "hangye",
+  "license": "MIT",
+  "devDependencies": {
+    "rimraf": "^5.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hangye/mcp-chrome-bridge.git",
+    "directory": "packages/native-wasm"
+  }
+}

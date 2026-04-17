@@ -1,0 +1,14 @@
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/deps/serde-076ab80755548682.d: /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/lib.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/integer128.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/mod.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/de.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/ser.rs /Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/build/serde-d0e0f846a2857d53/out/private.rs
+
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/deps/libserde-076ab80755548682.rlib: /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/lib.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/integer128.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/mod.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/de.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/ser.rs /Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/build/serde-d0e0f846a2857d53/out/private.rs
+
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/deps/libserde-076ab80755548682.rmeta: /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/lib.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/integer128.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/mod.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/de.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/ser.rs /Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/build/serde-d0e0f846a2857d53/out/private.rs
+
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/lib.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/integer128.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/mod.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/de.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/serde-1.0.228/src/private/ser.rs:
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/build/serde-d0e0f846a2857d53/out/private.rs:
+
+# env-dep:OUT_DIR=/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/release/build/serde-d0e0f846a2857d53/out

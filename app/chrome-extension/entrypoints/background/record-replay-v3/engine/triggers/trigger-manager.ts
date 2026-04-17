@@ -188,6 +188,9 @@ export function createTriggerManager(deps: TriggerManagerDeps): TriggerManager {
     handlers.set(kind, handler);
   }
 
+  // Track call count for periodic cleanup
+  (handleFire as any).callCount = 0;
+
   /**
    * 处理触发器触发（内部方法）
    * @param throwOnDrop 如果为 true，则在 cooldown/maxQueued 等情况下抛出错误
@@ -198,6 +201,9 @@ export function createTriggerManager(deps: TriggerManagerDeps): TriggerManager {
     context: { sourceTabId?: number; sourceUrl?: string },
     options?: { throwOnDrop?: boolean },
   ): Promise<EnqueueRunResult | null> {
+    // Increment call counter
+    (handleFire as any).callCount = ((handleFire as any).callCount || 0) + 1;
+
     if (!started) {
       if (options?.throwOnDrop) {
         throw new Error('TriggerManager is not started');
@@ -214,6 +220,17 @@ export function createTriggerManager(deps: TriggerManagerDeps): TriggerManager {
     }
 
     const t = now();
+
+    // Periodic cleanup of stale lastFireAt entries (every 100 calls)
+    if ((handleFire as any).callCount % 100 === 0) {
+      const staleThreshold = cooldownMs > 0 ? cooldownMs * 10 : 60 * 60 * 1000; // 10x cooldown or 1hr default
+      const nowTime = now();
+      for (const [tid, ts] of lastFireAt) {
+        if (nowTime - ts > staleThreshold) {
+          lastFireAt.delete(tid);
+        }
+      }
+    }
 
     // Per-trigger cooldown 检查
     const prevLastFireAt = lastFireAt.get(triggerId);
@@ -313,18 +330,8 @@ export function createTriggerManager(deps: TriggerManagerDeps): TriggerManager {
     const triggers = await deps.storage.triggers.list();
     if (!started) return;
 
-    // 先卸载所有，再重新安装 (简单策略，保证一致性)
-    // Best-effort: 单个 handler 卸载失败不影响其他
-    for (const handler of handlers.values()) {
-      try {
-        await handler.uninstallAll();
-      } catch (e) {
-        logger.warn(`[TriggerManager] Error during uninstallAll for kind "${handler.kind}":`, e);
-      }
-    }
-    installed.clear();
-
-    // 安装启用的触发器
+    // Build new map first (atomic swap)
+    const newInstalled = new Map<TriggerId, TriggerSpec>();
     for (const trigger of triggers) {
       if (!started) return;
       if (!trigger.enabled) continue;
@@ -337,10 +344,31 @@ export function createTriggerManager(deps: TriggerManagerDeps): TriggerManager {
 
       try {
         await handler.install(trigger as Parameters<typeof handler.install>[0]);
-        installed.set(trigger.id, trigger);
+        newInstalled.set(trigger.id, trigger);
       } catch (e) {
         logger.error(`[TriggerManager] Failed to install trigger "${trigger.id}":`, e);
       }
+    }
+
+    // Uninstall old triggers that are no longer needed
+    for (const [oldId] of installed) {
+      if (!newInstalled.has(oldId)) {
+        const oldTrigger = installed.get(oldId);
+        if (oldTrigger) {
+          const handler = handlers.get(oldTrigger.kind);
+          try {
+            await handler?.uninstall(oldId);
+          } catch (e) {
+            logger.warn(`[TriggerManager] Error uninstalling trigger "${oldId}":`, e);
+          }
+        }
+      }
+    }
+
+    // Atomic swap
+    installed.clear();
+    for (const [id, spec] of newInstalled) {
+      installed.set(id, spec);
     }
   }
 

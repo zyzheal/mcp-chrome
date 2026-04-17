@@ -56,6 +56,8 @@ export class Server {
   /** Map session ID to MCP server instance (for StreamableHTTP connections) */
   private mcpServersMap: Map<string, import('@modelcontextprotocol/sdk/server/index.js').Server> =
     new Map();
+  /** Timeout for orphaned MCP server sessions (5 minutes) */
+  private readonly MCP_SERVER_TIMEOUT_MS = 5 * 60 * 1000;
   private agentStreamManager: AgentStreamManager;
   private agentChatService: AgentChatService;
 
@@ -253,7 +255,19 @@ export class Server {
         const server = createMcpServer();
         this.mcpServersMap.set(newSessionId, server);
 
+        // Safety timer: close orphaned sessions that never complete initialization
+        const serverCleanupTimer = setTimeout(() => {
+          if (this.mcpServersMap.has(newSessionId)) {
+            console.error(`[Server] Closing orphaned MCP session ${newSessionId}`);
+            const orphanedServer = this.mcpServersMap.get(newSessionId);
+            orphanedServer?.close().catch(() => {});
+            this.mcpServersMap.delete(newSessionId);
+            this.transportsMap.delete(newSessionId);
+          }
+        }, this.MCP_SERVER_TIMEOUT_MS);
+
         transport.onclose = () => {
+          clearTimeout(serverCleanupTimer);
           const sid = transport?.sessionId;
           if (sid) {
             this.transportsMap.delete(sid);

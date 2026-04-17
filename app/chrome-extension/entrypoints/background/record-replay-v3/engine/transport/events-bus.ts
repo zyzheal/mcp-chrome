@@ -41,6 +41,11 @@ export interface EventsBus {
   subscribe(listener: (event: RunEvent) => void, filter?: EventsFilter): Unsubscribe;
 
   /**
+   * Remove all listeners for a specific run
+   */
+  unsubscribeByRun(runId: RunId): void;
+
+  /**
    * Append event
    * @description Delegates to EventsStore for atomic seq allocation, then broadcasts
    * @param event Event input (without seq)
@@ -72,6 +77,7 @@ export function createNotImplementedEventsBus(): EventsBus {
     },
     append: async () => notImplemented(),
     list: async () => notImplemented(),
+    unsubscribeByRun: () => {},
   };
 }
 
@@ -117,6 +123,17 @@ export class StorageBackedEventsBus implements EventsBus {
       fromSeq: query.fromSeq,
       limit: query.limit,
     });
+  }
+
+  /**
+   * Remove all listeners for a specific run (call when run completes)
+   */
+  unsubscribeByRun(runId: RunId): void {
+    for (const entry of this.listeners) {
+      if (entry.filter?.runId === runId) {
+        this.listeners.delete(entry);
+      }
+    }
   }
 
   /**
@@ -202,6 +219,14 @@ export class InMemoryEventsBus implements EventsBus {
     }
 
     return result;
+  }
+
+  unsubscribeByRun(runId: RunId): void {
+    for (const entry of this.listeners) {
+      if (entry.filter?.runId === runId) {
+        this.listeners.delete(entry);
+      }
+    }
   }
 
   /**

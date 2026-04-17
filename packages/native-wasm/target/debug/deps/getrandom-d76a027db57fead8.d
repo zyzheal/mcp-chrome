@@ -1,0 +1,11 @@
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/debug/deps/getrandom-d76a027db57fead8.d: /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/lib.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/error.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util_libc.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/getentropy.rs
+
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/debug/deps/libgetrandom-d76a027db57fead8.rlib: /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/lib.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/error.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util_libc.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/getentropy.rs
+
+/Users/heal/devops/claude-code/mcp-chrome/packages/native-wasm/target/debug/deps/libgetrandom-d76a027db57fead8.rmeta: /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/lib.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/error.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util_libc.rs /Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/getentropy.rs
+
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/lib.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/error.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/util_libc.rs:
+/Users/heal/.cargo/registry/src/mirrors.ustc.edu.cn-5857e57f01837ef8/getrandom-0.2.17/src/getentropy.rs:
