@@ -1,8 +1,35 @@
 <template>
   <div class="h-full flex flex-col" :style="containerStyle">
-    <!-- Header: Search + New Button -->
+    <!-- Header: Back + Search + New Button -->
     <div class="flex-shrink-0 px-4 py-3 border-b" :style="headerStyle">
       <div class="flex items-center gap-2">
+        <!-- Back to Main Page Button -->
+        <button
+          class="flex-shrink-0 p-2 cursor-pointer ac-btn"
+          :style="{
+            color: 'var(--ac-text-subtle)',
+            borderRadius: 'var(--ac-radius-button)',
+          }"
+          title="返回主页"
+          @click="$emit('back:home')"
+        >
+          <svg
+            class="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a9 9 0 006.75-6.75M12 17.25a3 3 0 01-3-3v-4.5"
+            />
+          </svg>
+        </button>
+
         <!-- Search Input -->
         <div class="flex-1 relative">
           <svg
@@ -48,6 +75,38 @@
             New
           </span>
         </button>
+
+        <!-- Settings Button -->
+        <button
+          class="flex-shrink-0 p-2 cursor-pointer ac-btn"
+          :style="{
+            color: 'var(--ac-text-subtle)',
+            borderRadius: 'var(--ac-radius-button)',
+          }"
+          title="OpenAI 配置"
+          @click="$emit('open:settings')"
+        >
+          <svg
+            class="w-5 h-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -86,20 +145,74 @@
             />
           </svg>
         </div>
-        <div class="text-sm font-medium mb-1" :style="{ color: 'var(--ac-text)' }">
-          {{ searchQuery ? 'No matching sessions' : 'No sessions yet' }}
-        </div>
-        <div class="text-xs text-center mb-4" :style="{ color: 'var(--ac-text-muted)' }">
-          {{ searchQuery ? 'Try a different search term' : 'Start a new conversation with AI' }}
-        </div>
-        <button
-          v-if="!searchQuery"
-          class="px-4 py-2 text-sm font-medium cursor-pointer"
-          :style="newButtonStyle"
-          @click="handleNewSession"
-        >
-          Start New Session
-        </button>
+
+        <!-- No search results -->
+        <template v-if="searchQuery">
+          <div class="text-sm font-medium mb-1" :style="{ color: 'var(--ac-text)' }">
+            No matching sessions
+          </div>
+          <div class="text-xs text-center" :style="{ color: 'var(--ac-text-muted)' }">
+            Try a different search term
+          </div>
+        </template>
+
+        <!-- Has config but no sessions yet -->
+        <template v-else-if="hasOpenAIConfig">
+          <div class="text-sm font-medium mb-1" :style="{ color: 'var(--ac-text)' }">
+            暂无会话
+          </div>
+          <div class="text-xs text-center mb-4" :style="{ color: 'var(--ac-text-muted)' }">
+            使用 {{ configDisplayName }} 开始对话
+          </div>
+          <button
+            class="px-4 py-2 text-sm font-medium cursor-pointer"
+            :style="newButtonStyle"
+            @click="handleNewSession"
+          >
+            创建新会话
+          </button>
+        </template>
+
+        <!-- No config configured -->
+        <template v-else>
+          <div class="text-sm font-medium mb-1" :style="{ color: 'var(--ac-text)' }">
+            未配置 API
+          </div>
+          <div class="text-xs text-center mb-4" :style="{ color: 'var(--ac-text-muted)' }">
+            请先配置 OpenAI 兼容的 API，然后再创建会话
+          </div>
+          <button
+            class="px-4 py-2 text-sm font-medium cursor-pointer flex items-center gap-2"
+            :style="{
+              backgroundColor: 'var(--ac-accent)',
+              color: 'var(--ac-accent-contrast)',
+              borderRadius: 'var(--ac-radius-button)',
+            }"
+            @click="$emit('open:settings')"
+          >
+            <svg
+              class="w-4 h-4"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+            前往设置
+          </button>
+        </template>
       </div>
 
       <!-- Session Items -->
@@ -119,11 +232,15 @@
       </div>
     </div>
 
-    <!-- Error Message -->
+    <!-- Error Message (top-level, always visible) -->
     <div
       v-if="error"
-      class="flex-shrink-0 px-4 py-2 text-xs"
-      :style="{ color: 'var(--ac-danger)', backgroundColor: 'var(--ac-surface-muted)' }"
+      class="flex-shrink-0 px-4 py-2 text-xs border-t"
+      :style="{
+        color: 'var(--ac-danger)',
+        backgroundColor: 'var(--ac-surface-muted)',
+        borderColor: 'var(--ac-border)',
+      }"
     >
       {{ error }}
     </div>
@@ -163,6 +280,9 @@ const emit = defineEmits<{
   'session:delete': [sessionId: string];
   'session:rename': [sessionId: string, name: string];
   'session:open-project': [sessionId: string];
+  'open:settings': [];
+  /** Navigate back to main extension page (workflows tab) */
+  'back:home': [];
 }>();
 
 // =============================================================================
@@ -172,8 +292,59 @@ const emit = defineEmits<{
 const searchQuery = ref('');
 
 // =============================================================================
-// Computed
+// OpenAI Config Detection (reactive)
 // =============================================================================
+
+/**
+ * Read the current OpenAI config from localStorage.
+ * This is called reactively so the empty state updates when config changes.
+ */
+function readOpenAIConfig(): { baseUrl: string; model: string; enabled: boolean } | null {
+  try {
+    const saved = localStorage.getItem('openai_config');
+    if (saved) {
+      const data = JSON.parse(saved);
+      if (data.baseUrl && data.apiKey) {
+        return {
+          baseUrl: data.baseUrl,
+          model: data.model || 'gpt-4o',
+          enabled: data.enabled ?? true,
+        };
+      }
+    }
+  } catch {
+    // Ignore
+  }
+  return null;
+}
+
+/**
+ * Derive provider display name from baseUrl.
+ */
+function getProviderFromBaseUrl(baseUrl: string): string {
+  const url = baseUrl.toLowerCase();
+  if (url.includes('dashscope') || url.includes('aliyun')) return '阿里云百炼';
+  if (url.includes('openai.azure.com')) return 'Azure OpenAI';
+  if (url.includes('localhost') || url.includes('127.0.0.1') || url.includes('11434'))
+    return 'Ollama 本地';
+  if (url.includes('api.openai.com')) return 'OpenAI 官方';
+  if (url.includes('bigmodel') || url.includes('zhipu')) return '智谱';
+  if (url.includes('moonshot') || url.includes('kimi')) return 'Kimi';
+  if (url.includes('minimax')) return 'MiniMax';
+  return '自定义';
+}
+
+const hasOpenAIConfig = computed(() => {
+  const config = readOpenAIConfig();
+  return config !== null && config.enabled;
+});
+
+const configDisplayName = computed(() => {
+  const config = readOpenAIConfig();
+  if (!config) return '';
+  const provider = getProviderFromBaseUrl(config.baseUrl);
+  return `${provider} / ${config.model}`;
+});
 
 /**
  * Filter sessions by search query.

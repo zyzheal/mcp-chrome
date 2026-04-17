@@ -88,6 +88,8 @@ export const BACKGROUND_MESSAGE_TYPES = {
   QUICK_PANEL_TABS_QUERY: 'quick_panel_tabs_query',
   QUICK_PANEL_TAB_ACTIVATE: 'quick_panel_tab_activate',
   QUICK_PANEL_TAB_CLOSE: 'quick_panel_tab_close',
+  // Agent status query
+  GET_AGENT_STATUS: 'get_agent_status',
 } as const;
 
 // Offscreen message types

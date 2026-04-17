@@ -20,7 +20,7 @@ export interface ModelDefinition {
   supportedReasoningEfforts?: readonly CodexReasoningEffort[];
 }
 
-export type AgentCliType = 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm';
+export type AgentCliType = 'claude' | 'codex' | 'cursor' | 'qwen' | 'glm' | 'kimi' | 'minimax';
 
 // ============================================================
 // Claude Models
@@ -182,23 +182,35 @@ export const CURSOR_DEFAULT_MODEL = 'auto';
 
 export const QWEN_MODELS: ModelDefinition[] = [
   {
+    id: 'qwen3.6-plus',
+    name: 'Qwen 3.6 Plus',
+    description: 'Text generation, deep reasoning, visual understanding',
+    supportsImages: true,
+  },
+  {
+    id: 'qwen3.5-plus',
+    name: 'Qwen 3.5 Plus',
+    description: 'Text generation, deep reasoning, visual understanding',
+    supportsImages: true,
+  },
+  {
+    id: 'qwen3-max-2026-01-23',
+    name: 'Qwen 3 Max',
+    description: 'Text generation, deep reasoning',
+  },
+  {
+    id: 'qwen3-coder-next',
+    name: 'Qwen3 Coder Next',
+    description: 'Text generation',
+  },
+  {
     id: 'qwen3-coder-plus',
     name: 'Qwen3 Coder Plus',
-    description: 'Balanced 32k context model for coding',
-  },
-  {
-    id: 'qwen3-coder-pro',
-    name: 'Qwen3 Coder Pro',
-    description: 'Larger 128k context with stronger reasoning',
-  },
-  {
-    id: 'qwen3-coder',
-    name: 'Qwen3 Coder',
-    description: 'Fast iteration model',
+    description: 'Balanced model for coding',
   },
 ];
 
-export const QWEN_DEFAULT_MODEL = 'qwen3-coder-plus';
+export const QWEN_DEFAULT_MODEL = 'qwen3.6-plus';
 
 // ============================================================
 // GLM Models
@@ -206,13 +218,47 @@ export const QWEN_DEFAULT_MODEL = 'qwen3-coder-plus';
 
 export const GLM_MODELS: ModelDefinition[] = [
   {
-    id: 'glm-4.6',
-    name: 'GLM 4.6',
-    description: 'Zhipu GLM 4.6 agent runtime',
+    id: 'glm-5',
+    name: 'GLM-5',
+    description: 'Zhipu GLM-5 text generation, deep reasoning',
+  },
+  {
+    id: 'glm-4.7',
+    name: 'GLM-4.7',
+    description: 'Zhipu GLM-4.7 text generation, deep reasoning',
   },
 ];
 
-export const GLM_DEFAULT_MODEL = 'glm-4.6';
+export const GLM_DEFAULT_MODEL = 'glm-5';
+
+// ============================================================
+// Kimi Models
+// ============================================================
+
+export const KIMI_MODELS: ModelDefinition[] = [
+  {
+    id: 'kimi-k2.5',
+    name: 'Kimi K2.5',
+    description: 'Text generation, deep reasoning, visual understanding',
+    supportsImages: true,
+  },
+];
+
+export const KIMI_DEFAULT_MODEL = 'kimi-k2.5';
+
+// ============================================================
+// MiniMax Models
+// ============================================================
+
+export const MINIMAX_MODELS: ModelDefinition[] = [
+  {
+    id: 'MiniMax-M2.5',
+    name: 'MiniMax M2.5',
+    description: 'MiniMax high-performance text generation',
+  },
+];
+
+export const MINIMAX_DEFAULT_MODEL = 'MiniMax-M2.5';
 
 // ============================================================
 // Aggregated Definitions
@@ -224,6 +270,8 @@ export const CLI_MODEL_DEFINITIONS: Record<AgentCliType, ModelDefinition[]> = {
   cursor: CURSOR_MODELS,
   qwen: QWEN_MODELS,
   glm: GLM_MODELS,
+  kimi: KIMI_MODELS,
+  minimax: MINIMAX_MODELS,
 };
 
 export const CLI_DEFAULT_MODELS: Record<AgentCliType, string> = {
@@ -232,6 +280,8 @@ export const CLI_DEFAULT_MODELS: Record<AgentCliType, string> = {
   cursor: CURSOR_DEFAULT_MODEL,
   qwen: QWEN_DEFAULT_MODEL,
   glm: GLM_DEFAULT_MODEL,
+  kimi: KIMI_DEFAULT_MODEL,
+  minimax: MINIMAX_DEFAULT_MODEL,
 };
 
 // ============================================================

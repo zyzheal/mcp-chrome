@@ -84,6 +84,40 @@ function broadcastServerStatusChange(status: ServerStatus): void {
     });
 }
 
+/**
+ * Directly probe HTTP server to check if it's running.
+ * Used as fallback when Native Messaging hasn't received SERVER_STARTED.
+ */
+async function probeHttpServer(): Promise<ServerStatus | null> {
+  const defaultPort = NATIVE_HOST.DEFAULT_PORT;
+  const portsToTry = currentServerStatus.port
+    ? [currentServerStatus.port, defaultPort]
+    : [defaultPort];
+
+  for (const port of portsToTry) {
+    if (!port) continue;
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const response = await fetch(`http://127.0.0.1:${port}/ping`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      if (response.ok) {
+        console.log('[NativeHost] HTTP probe succeeded on port', port);
+        return {
+          isRunning: true,
+          port: port,
+          lastUpdated: Date.now(),
+        };
+      }
+    } catch {
+      // Try next port
+    }
+  }
+  return null;
+}
+
 // ==================== Port Normalization ====================
 
 /**
@@ -344,6 +378,91 @@ export function connectNativeHost(port: number = NATIVE_HOST.DEFAULT_PORT): bool
     nativePort = chrome.runtime.connectNative(HOST_NAME);
 
     nativePort.onMessage.addListener(async (message) => {
+      // ===== 融合版新增消息处理 =====
+
+      // MCP Client 连接/断开状态
+      if (message.type === 'mcp_connected') {
+        console.log(`${LOG_PREFIX} MCP client connected`);
+        broadcastServerStatusChange({
+          isRunning: true,
+          port: currentServerStatus.port,
+          lastUpdated: Date.now(),
+          mcpConnected: true,
+        } as any);
+        return;
+      }
+
+      if (message.type === 'mcp_disconnected') {
+        console.log(`${LOG_PREFIX} MCP client disconnected`);
+        broadcastServerStatusChange({
+          isRunning: currentServerStatus.isRunning,
+          port: currentServerStatus.port,
+          lastUpdated: Date.now(),
+          mcpConnected: false,
+        } as any);
+        return;
+      }
+
+      // 来自 MCP Client 的工具请求
+      if (message.type === 'tool_request' && message.method) {
+        const { method, params } = message;
+        console.log(`${LOG_PREFIX} MCP tool_request: ${method}`);
+        try {
+          const result = await handleCallTool({
+            name: method.replace('mcp__claude-in-chrome__', '').replace('browser_', ''),
+            args: params,
+          });
+          nativePort?.postMessage({
+            type: 'tool_response',
+            payload: {
+              status: 'success',
+              message: SUCCESS_MESSAGES.TOOL_EXECUTED,
+              data: result,
+            },
+          });
+        } catch (error) {
+          nativePort?.postMessage({
+            type: 'tool_response',
+            payload: {
+              status: 'error',
+              message: ERROR_MESSAGES.TOOL_EXECUTION_FAILED,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+        return;
+      }
+
+      // Extension 自己发起的工具请求的执行命令
+      if (message.type === 'EXECUTE_TOOL' && message.requestId) {
+        const requestId = message.requestId;
+        const payload = message.payload;
+        console.log(`${LOG_PREFIX} EXECUTE_TOOL: ${payload?.name}`);
+        try {
+          const result = await handleCallTool(payload);
+          nativePort?.postMessage({
+            type: 'responseToRequestId',
+            responseToRequestId: requestId,
+            payload: {
+              status: 'success',
+              data: result,
+            },
+          });
+        } catch (error) {
+          nativePort?.postMessage({
+            type: 'responseToRequestId',
+            responseToRequestId: requestId,
+            payload: {
+              status: 'error',
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+        return;
+      }
+
+      // ===== 原有消息处理 =====
+
       if (message.type === NativeMessageType.PROCESS_DATA && message.requestId) {
         const requestId = message.requestId;
         const requestPayload = message.payload;
@@ -583,10 +702,37 @@ export const initNativeHostListener = () => {
     }
 
     if (message.type === BACKGROUND_MESSAGE_TYPES.GET_SERVER_STATUS) {
+      // If server status shows not running, try HTTP probe as fallback
+      // This handles cases where server was started externally (not via Native Messaging)
+      if (!currentServerStatus.isRunning) {
+        const httpStatus = probeHttpServer();
+        // probeHttpServer is async but we need to respond immediately
+        // Fire and forget - next call will have updated status
+        httpStatus
+          .then((status) => {
+            if (status) {
+              currentServerStatus = status;
+              saveServerStatus(status).catch(() => {});
+              broadcastServerStatusChange(status);
+            }
+          })
+          .catch(() => {});
+      }
       sendResponse({
         success: true,
         serverStatus: currentServerStatus,
         connected: nativePort !== null,
+      });
+      return true;
+    }
+
+    // GET_AGENT_STATUS: Return detailed agent connection status
+    if (message.type === BACKGROUND_MESSAGE_TYPES.GET_AGENT_STATUS) {
+      sendResponse({
+        success: true,
+        isServerReady: currentServerStatus.isRunning,
+        nativeConnected: nativePort !== null,
+        serverPort: currentServerStatus.port,
       });
       return true;
     }

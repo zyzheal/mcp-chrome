@@ -3,9 +3,10 @@
  * Centralized configuration values and magic constants
  */
 
-// Native Host Configuration
+// Native Host Configuration - Fusion Edition
+// 连接到融合后的 Claude Code Native Host
 export const NATIVE_HOST = {
-  NAME: 'com.chromemcp.nativehost',
+  NAME: 'com.anthropic.claude_code_browser_extension',
   DEFAULT_PORT: 12306,
 } as const;
 

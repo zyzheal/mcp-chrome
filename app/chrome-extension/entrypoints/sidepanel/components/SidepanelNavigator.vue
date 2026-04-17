@@ -33,6 +33,11 @@
         <div class="navigator-menu" :style="menuStyle" @click.stop>
           <div class="navigator-header">
             <span class="navigator-title">切换页面</span>
+            <!-- MCP Connection Status Indicator -->
+            <div class="navigator-status" :title="statusText">
+              <span class="navigator-status-dot" :class="statusClass"></span>
+              <span class="navigator-status-text">{{ statusText }}</span>
+            </div>
             <button class="navigator-close" @click="closeMenu">
               <svg
                 viewBox="0 0 24 24"
@@ -47,44 +52,6 @@
             </button>
           </div>
           <div class="navigator-items">
-            <button
-              class="navigator-item"
-              :class="{ 'navigator-item-active': activeTab === 'agent-chat' }"
-              @click="selectTab('agent-chat')"
-            >
-              <div class="navigator-item-icon">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="20"
-                  height="20"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <path
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
-                  />
-                </svg>
-              </div>
-              <div class="navigator-item-content">
-                <span class="navigator-item-title">智能助手</span>
-                <span class="navigator-item-desc">AI Agent 对话与任务</span>
-              </div>
-              <div v-if="activeTab === 'agent-chat'" class="navigator-item-check">
-                <svg
-                  viewBox="0 0 24 24"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                >
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            </button>
             <button
               class="navigator-item"
               :class="{ 'navigator-item-active': activeTab === 'workflows' }"
@@ -111,6 +78,44 @@
                 <span class="navigator-item-desc">录制与回放自动化流程</span>
               </div>
               <div v-if="activeTab === 'workflows'" class="navigator-item-check">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </button>
+            <button
+              class="navigator-item"
+              :class="{ 'navigator-item-active': activeTab === 'agent-chat' }"
+              @click="selectTab('agent-chat')"
+            >
+              <div class="navigator-item-icon">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                  />
+                </svg>
+              </div>
+              <div class="navigator-item-content">
+                <span class="navigator-item-title">智能助手</span>
+                <span class="navigator-item-desc">AI Agent 对话与任务</span>
+              </div>
+              <div v-if="activeTab === 'agent-chat'" class="navigator-item-check">
                 <svg
                   viewBox="0 0 24 24"
                   width="16"
@@ -161,6 +166,49 @@
                 </svg>
               </div>
             </button>
+            <button
+              class="navigator-item"
+              :class="{ 'navigator-item-active': activeTab === 'settings' }"
+              @click="selectTab('settings')"
+            >
+              <div class="navigator-item-icon">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="20"
+                  height="20"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                </svg>
+              </div>
+              <div class="navigator-item-content">
+                <span class="navigator-item-title">设置</span>
+                <span class="navigator-item-desc">API 配置与调试</span>
+              </div>
+              <div v-if="activeTab === 'settings'" class="navigator-item-check">
+                <svg
+                  viewBox="0 0 24 24"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                >
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+            </button>
           </div>
         </div>
       </div>
@@ -169,10 +217,11 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useFloatingDrag } from '../composables/useFloatingDrag';
+import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
 
-type TabType = 'workflows' | 'element-markers' | 'agent-chat';
+type TabType = 'workflows' | 'element-markers' | 'agent-chat' | 'settings';
 
 const BUTTON_SIZE = 36;
 const CLAMP_MARGIN = 12;
@@ -188,6 +237,66 @@ const emit = defineEmits<{
 const isOpen = ref(false);
 const wrapperRef = ref<HTMLElement | null>(null);
 const triggerRef = ref<HTMLElement | null>(null);
+
+// MCP Connection state
+const isServerReady = ref(false);
+const nativeConnected = ref(false);
+const httpServerRunning = ref(false);
+
+// Poll for connection status
+async function fetchConnectionStatus() {
+  try {
+    const res: any = await chrome.runtime.sendMessage({
+      type: BACKGROUND_MESSAGE_TYPES.GET_AGENT_STATUS,
+    });
+    if (res?.success) {
+      isServerReady.value = res.isServerReady ?? false;
+      nativeConnected.value = res.nativeConnected ?? false;
+      // Also check if HTTP server is running by pinging the endpoint
+      const port = res.serverPort || 12306;
+      try {
+        const pingResponse = await fetch(`http://127.0.0.1:${port}/ping`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+        });
+        httpServerRunning.value = pingResponse.ok;
+      } catch {
+        httpServerRunning.value = false;
+      }
+    }
+  } catch {
+    isServerReady.value = false;
+    nativeConnected.value = false;
+    httpServerRunning.value = false;
+  }
+}
+
+const statusClass = computed(() => {
+  if (isServerReady.value) return 'status-ready';
+  if (httpServerRunning.value && !nativeConnected.value) return 'status-warning';
+  if (nativeConnected.value) return 'status-connecting';
+  return 'status-disconnected';
+});
+
+const statusText = computed(() => {
+  if (isServerReady.value) return 'MCP 已连接';
+  if (httpServerRunning.value && !nativeConnected.value) return 'HTTP 服务运行中，Native 未连接';
+  if (nativeConnected.value) return '连接中...';
+  return '未连接';
+});
+
+let statusInterval: number | null = null;
+
+onMounted(async () => {
+  await fetchConnectionStatus();
+  statusInterval = window.setInterval(fetchConnectionStatus, 5000);
+});
+
+onUnmounted(() => {
+  if (statusInterval) {
+    clearInterval(statusInterval);
+  }
+});
 
 // Initialize floating drag
 const { positionStyle, isDragging, resetToDefault } = useFloatingDrag(triggerRef, wrapperRef, {
@@ -310,12 +419,56 @@ function selectTab(tab: TabType) {
   justify-content: space-between;
   padding: 12px 16px;
   border-bottom: var(--ac-border-width, 1px) solid var(--ac-border, #e7e5e4);
+  gap: 8px;
 }
 
 .navigator-title {
   font-size: 14px;
   font-weight: 600;
   color: var(--ac-text, #1a1a1a);
+}
+
+/* Connection Status Indicator */
+.navigator-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: var(--ac-surface-muted, #f5f5f5);
+  border-radius: var(--ac-radius-button, 6px);
+}
+
+.navigator-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transition: background-color var(--ac-motion-fast, 120ms) ease;
+}
+
+.navigator-status-dot.status-ready {
+  background: var(--ac-success, #22c55e);
+  box-shadow: 0 0 6px var(--ac-success, rgba(34, 197, 94, 0.5));
+}
+
+.navigator-status-dot.status-connecting {
+  background: var(--ac-warning, #f59e0b);
+  box-shadow: 0 0 6px var(--ac-warning, rgba(245, 158, 11, 0.5));
+}
+
+.navigator-status-dot.status-warning {
+  background: var(--ac-warning, #f59e0b);
+  box-shadow: 0 0 6px var(--ac-warning, rgba(245, 158, 11, 0.5));
+}
+
+.navigator-status-dot.status-disconnected {
+  background: var(--ac-text-subtle, #a8a29e);
+}
+
+.navigator-status-text {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ac-text-muted, #6e6e6e);
+  white-space: nowrap;
 }
 
 .navigator-close {
