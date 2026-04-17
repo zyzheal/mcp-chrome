@@ -1,99 +1,137 @@
 # Chrome MCP Server 🚀
 
-[![Stars](https://img.shields.io/github/stars/hangwin/mcp-chrome)](https://img.shields.io/github/stars/hangwin/mcp-chrome)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.8+-blue.svg)](https://www.typescriptlang.org/)
-[![Chrome Extension](https://img.shields.io/badge/Chrome-Extension-green.svg)](https://developer.chrome.com/docs/extensions/)
-[![Release](https://img.shields.io/github/v/release/hangwin/mcp-chrome.svg)](https://img.shields.io/github/v/release/hangwin/mcp-chrome.svg)
+> Turn your Chrome browser into your intelligent assistant — Let AI take control of your browser, transforming it into a powerful AI-controlled automation tool.
 
-> 🌟 **Turn your Chrome browser into your intelligent assistant** - Let AI take control of your browser, transforming it into a powerful AI-controlled automation tool.
-
-**📖 Documentation**: [English](README.md) | [中文](README_zh.md)
-
-> The project is still in its early stages and is under intensive development. More features, stability improvements, and other enhancements will follow.
+**Documentation**: [English](README.md) | [中文](README_zh.md)
+**Architecture**: [ARCHITECTURE.md](docs/ARCHITECTURE.md) | [中文架构](docs/ARCHITECTURE_zh.md)
+**Tools API**: [TOOLS.md](docs/TOOLS.md) | [中文工具](docs/TOOLS_zh.md)
 
 ---
 
-## 🎯 What is Chrome MCP Server?
+## What is Chrome MCP Server?
 
-Chrome MCP Server is a Chrome extension-based **Model Context Protocol (MCP) server** that exposes your Chrome browser functionality to AI assistants like Claude, enabling complex browser automation, content analysis, and semantic search. Unlike traditional browser automation tools (like Playwright), **Chrome MCP Server** directly uses your daily Chrome browser, leveraging existing user habits, configurations, and login states, allowing various large models or chatbots to take control of your browser and truly become your everyday assistant.
+Chrome MCP Server is a Chrome extension-based **Model Context Protocol (MCP) server** that exposes your Chrome browser functionality to AI assistants like Claude, enabling complex browser automation, content analysis, and semantic search. Unlike traditional browser automation tools (like Playwright), Chrome MCP Server directly uses your daily Chrome browser, leveraging existing user habits, configurations, and login states.
 
-## ✨ New Features(2025/12/30)
+## Core Features
 
-- **A New Visual Editor for Claude Code & Codex**, for more detail here: [VisualEditor](docs/VisualEditor.md)
+- **Chatbot/Model Agnostic**: Let any LLM or chatbot client automate your browser
+- **Use Your Original Browser**: Seamlessly integrates with your existing browser environment
+- **Fully Local**: Pure local MCP server ensuring user privacy
+- **Streamable HTTP**: Streamable HTTP connection method
+- **Cross-Tab**: Cross-tab context
+- **Semantic Search**: Built-in vector database for intelligent browser tab content discovery
+- **20+ Tools**: Screenshots, network monitoring, interactive operations, bookmarks, history, and more
+- **SIMD-Accelerated AI**: Custom WebAssembly SIMD optimization for 4-8x faster vector operations
 
-## ✨ Core Features
-
-- 😁 **Chatbot/Model Agnostic**: Let any LLM or chatbot client or agent you prefer automate your browser
-- ⭐️ **Use Your Original Browser**: Seamlessly integrate with your existing browser environment (your configurations, login states, etc.)
-- 💻 **Fully Local**: Pure local MCP server ensuring user privacy
-- 🚄 **Streamable HTTP**: Streamable HTTP connection method
-- 🏎 **Cross-Tab**: Cross-tab context
-- 🧠 **Semantic Search**: Built-in vector database for intelligent browser tab content discovery
-- 🔍 **Smart Content Analysis**: AI-powered text extraction and similarity matching
-- 🌐 **20+ Tools**: Support for screenshots, network monitoring, interactive operations, bookmark management, browsing history, and 20+ other tools
-- 🚀 **SIMD-Accelerated AI**: Custom WebAssembly SIMD optimization for 4-8x faster vector operations
-
-## 🆚 Comparison with Similar Projects
-
-| Comparison Dimension    | Playwright-based MCP Server                                                                                               | Chrome Extension-based MCP Server                                                                      |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| **Resource Usage**      | ❌ Requires launching independent browser process, installing Playwright dependencies, downloading browser binaries, etc. | ✅ No need to launch independent browser process, directly utilizes user's already open Chrome browser |
-| **User Session Reuse**  | ❌ Requires re-login                                                                                                      | ✅ Automatically uses existing login state                                                             |
-| **Browser Environment** | ❌ Clean environment lacks user settings                                                                                  | ✅ Fully preserves user environment                                                                    |
-| **API Access**          | ⚠️ Limited to Playwright API                                                                                              | ✅ Full access to Chrome native APIs                                                                   |
-| **Startup Speed**       | ❌ Requires launching browser process                                                                                     | ✅ Only needs to activate extension                                                                    |
-| **Response Speed**      | 50-200ms inter-process communication                                                                                      | ✅ Faster                                                                                              |
-
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 
-- Node.js >= 20.0.0 and pnpm/npm
+- Node.js >= 20.0.0
 - Chrome/Chromium browser
+- pnpm (recommended) or npm
 
-### Installation Steps
+### Installation
 
-1. **Download the latest Chrome extension from GitHub**
+#### Method 1: Production Release (Recommended)
 
-Download link: https://github.com/hangwin/mcp-chrome/releases
+1. **Download the latest release**: https://github.com/hangwin/mcp-chrome/releases
 
-2. **Install mcp-chrome-bridge globally**
-
-npm
-
-```bash
-npm install -g mcp-chrome-bridge
-```
-
-pnpm
-
-```bash
-# Method 1: Enable scripts globally (recommended)
-pnpm config set enable-pre-post-scripts true
-pnpm install -g mcp-chrome-bridge
-
-# Method 2: Manual registration (if postinstall doesn't run)
-pnpm install -g mcp-chrome-bridge
-mcp-chrome-bridge register
-```
-
-> Note: pnpm v7+ disables postinstall scripts by default for security. The `enable-pre-post-scripts` setting controls whether pre/post install scripts run. If automatic registration fails, use the manual registration command above.
-
-3. **Load Chrome Extension**
-   - Open Chrome and go to `chrome://extensions/`
+2. **Load the extension**:
+   - Open Chrome → `chrome://extensions/`
    - Enable "Developer mode"
-   - Click "Load unpacked" and select `your/dowloaded/extension/folder`
-   - Click the extension icon to open the plugin, then click connect to see the MCP configuration
-     <img width="475" alt="Screenshot 2025-06-09 15 52 06" src="https://github.com/user-attachments/assets/241e57b8-c55f-41a4-9188-0367293dc5bc" />
+   - Click "Load unpacked" → select the downloaded extension folder
 
-### Usage with MCP Protocol Clients
+3. **Install mcp-chrome-bridge**:
+   ```bash
+   npm install -g mcp-chrome-bridge
+   ```
 
-#### Using Streamable HTTP Connection (👍🏻 Recommended)
+#### Method 2: Development from Source
 
-Add the following configuration to your MCP client configuration (using CherryStudio as an example):
+```bash
+# Clone the repository
+git clone https://github.com/hangwin/mcp-chrome.git
+cd mcp-chrome
 
-> Streamable HTTP connection method is recommended
+# Install dependencies
+pnpm install
+
+# Build the project
+pnpm build
+
+# Build WASM SIMD module (requires Rust toolchain)
+pnpm build:wasm
+
+# Start all services in development mode
+pnpm dev
+```
+
+### Load Extension in Chrome
+
+1. Open Chrome → `chrome://extensions/`
+2. Enable "Developer mode" (top-right corner)
+3. Click "Load unpacked"
+4. Select the directory: `app/chrome-extension/.output/chrome-mv3`
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Chrome Extension                      │
+│  ┌──────────────┐  ┌──────────────┐  ┌───────────────┐ │
+│  │  Sidepanel    │  │  Background   │  │  Content      │ │
+│  │  (Vue 3 UI)   │  │  Service      │  │  Scripts      │ │
+│  │              │  │              │  │              │ │
+│  │  - AgentChat │  │  - Native     │  │  - Web Page   │ │
+│  │  - Settings  │  │    Host       │  │    Injection  │ │
+│  │  - Sessions  │  │  - Keepalive  │  │  - DOM Access │ │
+│  └──────┬───────┘  └──────┬───────┘  └───────────────┘ │
+│         │                 │                             │
+└─────────┼─────────────────┼─────────────────────────────┘
+          │                 │ Native Messaging
+          │                 ▼
+          │    ┌────────────────────────┐
+          │    │   Native Server        │
+          │    │   (Node.js :12306)     │
+          │    │                        │
+          │    │  - Fastify HTTP API    │
+          │    │  - MCP Server          │
+          │    │    (Streamable HTTP)   │
+          │    │  - Agent Engines       │
+          │    │    (Claude, Codex)     │
+          │    └──────────┬─────────────┘
+          │               │
+          ▼               ▼
+┌─────────────────────────────────────────────────────────┐
+│                   External Services                      │
+│                                                         │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────┐ │
+│  │  OpenAI     │  │  Claude     │  │  Codex CLI      │ │
+│  │  Compatible │  │  Code CLI   │  │  (Anthropic)    │ │
+│  │  APIs       │  │             │  │                 │ │
+│  └─────────────┘  └─────────────┘  └─────────────────┘ │
+│                                                         │
+│  Supported Providers:                                   │
+│  OpenAI, GPT-4o, Claude, Codex,                         │
+│  Qwen (通义千问), GLM (智谱),                             │
+│  Kimi, MiniMax                                          │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Connection Modes
+
+| Mode                 | Description                                                 | Best For              |
+| -------------------- | ----------------------------------------------------------- | --------------------- |
+| **Native Messaging** | Extension ↔ Native Server via Chrome's native messaging API | Production use        |
+| **HTTP Direct**      | Extension ↔ Native Server via HTTP (`127.0.0.1:12306`)      | Local development     |
+| **OpenAI Direct**    | Extension ↔ OpenAI-compatible API (bypasses Native Server)  | Cloud-first workflows |
+
+## Usage
+
+### MCP Client Configuration
+
+#### Streamable HTTP (Recommended)
 
 ```json
 {
@@ -106,48 +144,62 @@ Add the following configuration to your MCP client configuration (using CherrySt
 }
 ```
 
-#### Using STDIO Connection (Alternative)
-
-If your client only supports stdio connection method, please use the following approach:
-
-1. First, check the installation location of the npm package you just installed
-
-```sh
-# npm check method
-npm list -g mcp-chrome-bridge
-# pnpm check method
-pnpm list -g mcp-chrome-bridge
-```
-
-Assuming the command above outputs the path: /Users/xxx/Library/pnpm/global/5
-Then your final path would be: /Users/xxx/Library/pnpm/global/5/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js
-
-2. Replace the configuration below with the final path you just obtained
+#### STDIO (Alternative)
 
 ```json
 {
   "mcpServers": {
     "chrome-mcp-stdio": {
       "command": "npx",
-      "args": [
-        "node",
-        "/Users/xxx/Library/pnpm/global/5/node_modules/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"
-      ]
+      "args": ["node", "/path/to/mcp-chrome-bridge/dist/mcp/mcp-server-stdio.js"]
     }
   }
 }
 ```
 
-eg：config in augment:
+### Settings Configuration
 
-<img width="494" alt="截屏2025-06-22 22 11 25" src="https://github.com/user-attachments/assets/48eefc0c-a257-4d3b-8bbe-d7ff716de2bf" />
+After loading the extension, access settings via:
 
-## 🛠️ Available Tools
+```
+Sidepanel → Floating button (☰) → Settings
+```
 
-Complete tool list: [Complete Tool List](docs/TOOLS.md)
+#### OpenAI Compatible API
+
+Configure any OpenAI-compatible endpoint in the Settings page:
+
+| Field       | Description           | Example                           |
+| ----------- | --------------------- | --------------------------------- |
+| API Key     | Authentication key    | `sk-xxx`                          |
+| Base URL    | API endpoint URL      | `https://api.openai.com/v1`       |
+| Model       | Model identifier      | `gpt-4o`, `qwen3.6-plus`, `glm-5` |
+| Max Tokens  | Response length limit | `4096`                            |
+| Temperature | Randomness control    | `0.7`                             |
+
+**Preset configurations** are available for:
+
+- OpenAI Official
+- Azure OpenAI
+- Ollama (local models)
+
+#### OpenAI Direct Mode
+
+Enable "作为聊天默认引擎" in Settings to bypass the Native Server and call the OpenAI-compatible API directly. Additional options:
+
+- **Text-only mode**: AI returns text only, without calling browser extension tools
+- **Prompt for Native Server**: When tools are needed, prompts the user to start the Native Server first
+
+#### Debug Mode
+
+For local development, enable debug mode to communicate with the extension without full MCP authentication. Includes a countdown timer (2 hours) and debug token.
+
+## Available Tools
+
+Complete tool list: [TOOLS.md](docs/TOOLS.md)
 
 <details>
-<summary><strong>📊 Browser Management (6 tools)</strong></summary>
+<summary><strong>Browser Management</strong></summary>
 
 - `get_windows_and_tabs` - List all browser windows and tabs
 - `chrome_navigate` - Navigate to URLs and control viewport
@@ -155,17 +207,16 @@ Complete tool list: [Complete Tool List](docs/TOOLS.md)
 - `chrome_close_tabs` - Close specific tabs or windows
 - `chrome_go_back_or_forward` - Browser navigation control
 - `chrome_inject_script` - Inject content scripts into web pages
-- `chrome_send_command_to_inject_script` - Send commands to injected content scripts
 </details>
 
 <details>
-<summary><strong>📸 Screenshots & Visual (1 tool)</strong></summary>
+<summary><strong>Screenshots & Visual</strong></summary>
 
-- `chrome_screenshot` - Advanced screenshot capture with element targeting, full-page support, and custom dimensions
+- `chrome_screenshot` - Advanced screenshot capture with element targeting
 </details>
 
 <details>
-<summary><strong>🌐 Network Monitoring (4 tools)</strong></summary>
+<summary><strong>Network Monitoring</strong></summary>
 
 - `chrome_network_capture_start/stop` - webRequest API network capture
 - `chrome_network_debugger_start/stop` - Debugger API with response bodies
@@ -173,24 +224,24 @@ Complete tool list: [Complete Tool List](docs/TOOLS.md)
 </details>
 
 <details>
-<summary><strong>🔍 Content Analysis (4 tools)</strong></summary>
+<summary><strong>Content Analysis</strong></summary>
 
 - `search_tabs_content` - AI-powered semantic search across browser tabs
 - `chrome_get_web_content` - Extract HTML/text content from pages
 - `chrome_get_interactive_elements` - Find clickable elements
-- `chrome_console` - Capture and retrieve console output from browser tabs
+- `chrome_console` - Capture and retrieve console output
 </details>
 
 <details>
-<summary><strong>🎯 Interaction (3 tools)</strong></summary>
+<summary><strong>Interaction</strong></summary>
 
 - `chrome_click_element` - Click elements using CSS selectors
 - `chrome_fill_or_select` - Fill forms and select options
-- `chrome_keyboard` - Simulate keyboard input and shortcuts
+- `chrome_keyboard` - Simulate keyboard input
 </details>
 
 <details>
-<summary><strong>📚 Data Management (5 tools)</strong></summary>
+<summary><strong>Data Management</strong></summary>
 
 - `chrome_history` - Search browser history with time filters
 - `chrome_bookmark_search` - Find bookmarks by keywords
@@ -198,108 +249,109 @@ Complete tool list: [Complete Tool List](docs/TOOLS.md)
 - `chrome_bookmark_delete` - Delete bookmarks
 </details>
 
-## 🧪 Usage Examples
+## Development
 
-### AI helps you summarize webpage content and automatically control Excalidraw for drawing
+### Project Structure
 
-prompt: [excalidraw-prompt](prompt/excalidraw-prompt.md)
-Instruction: Help me summarize the current page content, then draw a diagram to aid my understanding.
-https://www.youtube.com/watch?v=3fBPdUBWVz0
+```
+mcp-chrome/
+├── app/
+│   ├── chrome-extension/     # Chrome extension (Vue 3 + WXT)
+│   │   ├── entrypoints/
+│   │   │   ├── background/   # Background service worker
+│   │   │   ├── sidepanel/    # Sidepanel UI (Vue components)
+│   │   │   └── content/      # Content scripts
+│   │   ├── common/           # Shared types and constants
+│   │   └── workers/          # Web Workers (WASM SIMD)
+│   └── native-server/        # Native server (Node.js + Fastify)
+│       ├── src/
+│       │   ├── agent/        # Agent engines and services
+│       │   ├── server/       # Fastify HTTP server and routes
+│       │   └── mcp/          # MCP server implementation
+│       └── scripts/          # Development helper scripts
+├── packages/
+│   ├── shared/               # Shared TypeScript types
+│   └── wasm-simd/            # Rust WebAssembly SIMD module
+└── docs/                     # Documentation
+```
 
-https://github.com/user-attachments/assets/fd17209b-303d-48db-9e5e-3717141df183
+### Key Commands
 
-### After analyzing the content of the image, the LLM automatically controls Excalidraw to replicate the image
+```bash
+# Development
+pnpm dev              # Start all services in dev mode
+pnpm dev:extension    # Watch-mode for Chrome extension
+pnpm dev:native       # Watch-mode for native server
 
-prompt: [excalidraw-prompt](prompt/excalidraw-prompt.md)|[content-analize](prompt/content-analize.md)
-Instruction: First, analyze the content of the image, and then replicate the image by combining the analysis with the content of the image.
-https://www.youtube.com/watch?v=tEPdHZBzbZk
+# Build
+pnpm build            # Build all packages
+pnpm build:extension  # Build Chrome extension only
+pnpm build:native     # Build native server only
+pnpm build:wasm       # Build WASM SIMD module
 
-https://github.com/user-attachments/assets/60d12b1a-9b74-40f4-994c-95e8fa1fc8d3
+# Quality
+pnpm test             # Run all tests
+pnpm lint             # ESLint check
+pnpm typecheck        # TypeScript type checking
+pnpm format           # Prettier formatting
 
-### AI automatically injects scripts and modifies webpage styles
+# Cleanup
+pnpm clean:dist       # Remove all dist directories
+pnpm clean:modules    # Remove all node_modules
+```
 
-prompt: [modify-web-prompt](prompt/modify-web.md)
-Instruction: Help me modify the current page's style and remove advertisements.
-https://youtu.be/twI6apRKHsk
+### WASM SIMD Build
 
-https://github.com/user-attachments/assets/69cb561c-2e1e-4665-9411-4a3185f9643e
+The WASM SIMD module requires a Rust toolchain. Run the environment check before building:
 
-### AI automatically captures network requests for you
+```bash
+cd packages/wasm-simd
+pnpm check:env        # Verify Rust, wasm-pack, and targets
+pnpm build            # Build with environment check
+pnpm build:force      # Build without environment check
+```
 
-query: I want to know what the search API for Xiaohongshu is and what the response structure looks like
+Required tools:
 
-https://youtu.be/1hHKr7XKqnQ
+- `rustc` >= 1.70
+- `cargo`
+- `wasm-pack` (`cargo install wasm-pack`)
+- `wasm32-unknown-unknown` target (`rustup target add wasm32-unknown-unknown`)
 
-https://github.com/user-attachments/assets/dc7e5cab-b9af-4b9a-97ce-18e4837318d9
+### Debugging
 
-### AI helps analyze your browsing history
+**Backend server logs**:
 
-query: Analyze my browsing history from the past month
+```bash
+cd app/native-server
+node dist/index.js
+```
 
-https://youtu.be/jf2UZfrR2Vk
+**Extension console**:
 
-https://github.com/user-attachments/assets/31b2e064-88c6-4adb-96d7-50748b826eae
+- Sidepanel: Right-click content area → "Inspect"
+- Background service worker: `chrome://extensions/` → "Service Worker" link
 
-### Web page conversation
+**API testing**:
 
-query: Translate and summarize the current web page
-https://youtu.be/FlJKS9UQyC8
+```bash
+# Use the debug tools script
+cd app/native-server/scripts
+bash debug-tools.sh status    # Check server status
+bash debug-tools.sh test      # Test all API endpoints
+bash debug-tools.sh config    # View OpenAI config
+```
 
-https://github.com/user-attachments/assets/aa8ef2a1-2310-47e6-897a-769d85489396
+## Contributing
 
-### AI automatically takes screenshots for you (web page screenshots)
+See [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
 
-query: Take a screenshot of Hugging Face's homepage
-https://youtu.be/7ycK6iksWi4
+## Troubleshooting
 
-https://github.com/user-attachments/assets/65c6eee2-6366-493d-a3bd-2b27529ff5b3
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) | [中文](docs/TROUBLESHOOTING_zh.md)
+- [Debugging Guide](docs/debugging-guide.md)
+- [UI Debugging Guide](docs/ui-debugging-guide.md)
 
-### AI automatically takes screenshots for you (element screenshots)
+## License
 
-query: Capture the icon from Hugging Face's homepage
-https://youtu.be/ev8VivANIrk
-
-https://github.com/user-attachments/assets/d0cf9785-c2fe-4729-a3c5-7f2b8b96fe0c
-
-### AI helps manage bookmarks
-
-query: Add the current page to bookmarks and put it in an appropriate folder
-
-https://youtu.be/R_83arKmFTo
-
-https://github.com/user-attachments/assets/15a7d04c-0196-4b40-84c2-bafb5c26dfe0
-
-### Automatically close web pages
-
-query: Close all shadcn-related web pages
-
-https://youtu.be/2wzUT6eNVg4
-
-https://github.com/user-attachments/assets/83de4008-bb7e-494d-9b0f-98325cfea592
-
-## 🤝 Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](docs/CONTRIBUTING.md) for detailed guidelines.
-
-## 🚧 Future Roadmap
-
-We have exciting plans for the future development of Chrome MCP Server:
-
-- [ ] Authentication
-- [ ] Recording and Playback
-- [ ] Workflow Automation
-- [ ] Enhanced Browser Support (Firefox Extension)
-
----
-
-**Want to contribute to any of these features?** Check out our [Contributing Guide](docs/CONTRIBUTING.md) and join our development community!
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📚 More Documentation
-
-- [Architecture Design](docs/ARCHITECTURE.md) - Detailed technical architecture documentation
-- [TOOLS API](docs/TOOLS.md) - Complete tool API documentation
-- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issue solutions
+MIT License — see [LICENSE](LICENSE)
