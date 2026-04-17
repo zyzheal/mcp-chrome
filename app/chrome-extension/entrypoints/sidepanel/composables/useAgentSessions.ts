@@ -71,26 +71,13 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
    */
   async function fetchSessions(projectId: string): Promise<void> {
     const serverPort = options.getServerPort();
-    if (!serverPort || !projectId) {
-      console.warn('[fetchSessions] Skipping: serverPort=', serverPort, 'projectId=', projectId);
-      return;
-    }
+    if (!serverPort || !projectId) return;
 
     // Increment nonce - any subsequent fetch will invalidate this one
     const myNonce = ++fetchSessionsNonce;
-    console.warn('[fetchSessions] Starting fetch for project:', projectId, 'nonce:', myNonce);
 
     const isStillValid = (): boolean => {
-      const valid = myNonce === fetchSessionsNonce;
-      if (!valid) {
-        console.warn(
-          '[fetchSessions] Nonce mismatch, aborting fetch. myNonce:',
-          myNonce,
-          'current:',
-          fetchSessionsNonce,
-        );
-      }
-      return valid;
+      return myNonce === fetchSessionsNonce;
     };
 
     isLoadingSessions.value = true;
@@ -98,34 +85,33 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
 
     try {
       const url = `http://127.0.0.1:${serverPort}/agent/projects/${encodeURIComponent(projectId)}/sessions`;
-      console.warn('[fetchSessions] Fetching from:', url);
       const response = await fetch(url);
 
       if (!isStillValid()) return;
 
       if (response.ok) {
         const data = await response.json();
-        console.warn('[fetchSessions] Response sessions count:', data.sessions?.length || 0);
 
         if (!isStillValid()) return;
 
         sessions.value = data.sessions || [];
-        console.warn('[fetchSessions] Updated sessions.value, count:', sessions.value.length);
 
         // If we have sessions but no selection, select the most recent one
         if (sessions.value.length > 0 && !selectedSessionId.value) {
-          console.warn('[fetchSessions] Auto-selecting first session:', sessions.value[0].id);
           selectedSessionId.value = sessions.value[0].id;
           await saveSelectedSessionId();
         }
       } else {
         const text = await response.text().catch(() => '');
-        console.warn('[fetchSessions] Response not ok:', response.status, text);
-        sessionError.value = text || `HTTP ${response.status}`;
+        // 404 is expected for fresh server, 409 can occur with stale state - both silently ignored
+        if (response.status !== 404 && response.status !== 409) {
+          sessionError.value = text || `HTTP ${response.status}`;
+        }
       }
     } catch (error) {
-      console.error('[fetchSessions] Failed to fetch sessions:', error);
-      sessionError.value = error instanceof Error ? error.message : 'Failed to fetch sessions';
+      // Server unreachable (connection refused, timeout, etc.) - expected when native server not running
+      // Silently ignore; caller should fall back to local storage
+      sessionError.value = null;
     } finally {
       isLoadingSessions.value = false;
     }
@@ -165,11 +151,14 @@ export function useAgentSessions(options: UseAgentSessionsOptions) {
         allSessions.value = data.sessions || [];
       } else {
         const text = await response.text().catch(() => '');
-        sessionError.value = text || `HTTP ${response.status}`;
+        // 409 can occur with stale server state - silently ignored
+        if (response.status !== 409) {
+          sessionError.value = text || `HTTP ${response.status}`;
+        }
       }
     } catch (error) {
-      console.error('Failed to fetch all sessions:', error);
-      sessionError.value = error instanceof Error ? error.message : 'Failed to fetch sessions';
+      // Server unreachable - expected when native server not running
+      // Silently ignore; allSessions will be empty
     } finally {
       isLoadingAllSessions.value = false;
     }

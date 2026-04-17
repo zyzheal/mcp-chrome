@@ -73,8 +73,8 @@
             :available-reasoning-efforts="currentAvailableReasoningEfforts"
             :enable-fake-caret="inputPreferences.fakeCaretEnabled.value"
             :native-server-ready="server.isServerReady.value"
-            :has-open-a-i-config="getSavedOpenAIConfig() !== null"
-            :use-native-server="!useDirectOpenAIExplicit"
+            :has-open-a-i-config="hasOpenAIConfig"
+            :use-native-server="!useDirectOpenAI"
             :text-only-mode="getSavedOpenAIConfig()?.textOnlyMode ?? false"
             @update:model-value="activeChat.input.value = $event"
             @submit="handleSend"
@@ -350,6 +350,16 @@ const openaiChat = useOpenAIChat({
 // =============================================================================
 
 /**
+ * Reactive tracking of whether OpenAI config exists.
+ * Updated on mount, storage events, and custom config-changed events from SettingsView.
+ */
+const hasOpenAIConfig = ref(getSavedOpenAIConfig() !== null);
+
+function refreshOpenAIConfig(): void {
+  hasOpenAIConfig.value = getSavedOpenAIConfig() !== null;
+}
+
+/**
  * User-controlled mode override.
  * null = auto-detect, true = force Native Server, false = force OpenAI direct.
  */
@@ -378,9 +388,10 @@ const useDirectOpenAI = computed(() => {
 
   // Auto mode: use Native Server if available
   if (server.isServerReady.value) return false;
-  // Server not ready - still use MCP mode by default (not direct OpenAI)
-  // The mode indicator will show a warning if tools are needed
-  return false;
+  // Server not ready - fall back to direct OpenAI if configured and enabled
+  if (!config) return false;
+  if (!config.enabled) return false;
+  return true;
 });
 
 /**
@@ -1438,7 +1449,8 @@ async function handleSend(): Promise<void> {
   // Ensure session is synced to server before sending
   const sessionSynced = await sessions.ensureSessionSynced(dbSessionId);
   if (!sessionSynced) {
-    chat.errorMessage.value = 'Failed to sync session to server. Please try refreshing the page.';
+    chat.errorMessage.value =
+      'Native Server 未运行。请启动本地服务，或在设置中配置 OpenAI 直连模式。';
     return;
   }
 
@@ -1742,7 +1754,10 @@ onMounted(async () => {
     }
 
     // Try to initialize server (non-blocking, for AI chat functionality)
-    await server.initialize();
+    // Skip server initialization if already in direct OpenAI mode (no native server wanted)
+    if (!useDirectOpenAI.value) {
+      await server.initialize();
+    }
 
     // Only open SSE and load history if we're in chat view with a valid session AND server is ready
     if (
@@ -1763,15 +1778,14 @@ watch(
   () => server.isServerReady.value,
   async (ready) => {
     if (ready && viewRoute.isChatView.value && sessions.selectedSessionId.value) {
+      // Wait briefly for server to fully stabilize before opening SSE
+      await new Promise((resolve) => setTimeout(resolve, 500));
       // Server just came online while user is in chat view - open SSE
       server.openEventSource();
       await loadSessionHistory(sessions.selectedSessionId.value);
     }
-    // When server becomes ready for the first time, sync existing sessions to ensure they exist on server
-    if (ready && !sessionsSyncedToServer.value) {
-      sessionsSyncedToServer.value = true;
-      await sessions.syncAllSessionsToServer();
-    }
+    // When server becomes ready for the first time, do NOT sync sessions proactively.
+    // Sessions are synced lazily on first handleSend call.
   },
 );
 
@@ -1795,9 +1809,15 @@ const handleEscape = (e: KeyboardEvent) => {
 
 onMounted(() => {
   document.addEventListener('keydown', handleEscape);
+  // React to OpenAI config changes from SettingsView (same-window)
+  window.addEventListener('openai-config-changed', refreshOpenAIConfig);
+  // React to config changes from other extension pages (cross-context)
+  window.addEventListener('storage', refreshOpenAIConfig);
 });
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleEscape);
+  window.removeEventListener('openai-config-changed', refreshOpenAIConfig);
+  window.removeEventListener('storage', refreshOpenAIConfig);
 });
 </script>

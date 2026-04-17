@@ -170,58 +170,125 @@ class ReadPageTool extends BaseBrowserToolExecutor {
         return createErrorResponse(resp?.error || 'Failed to generate accessibility tree');
       }
 
-      // Fallback path: try get_interactive_elements once
+      // --- Fallback path: try get_interactive_elements ---
+
+      // Use non-throwing injection so fallback failure doesn't abort the whole operation
       try {
-        await this.injectContentScript(tab.id, ['inject-scripts/interactive-elements-helper.js']);
-        const fallback = await this.sendMessageToTab(tab.id, {
-          action: TOOL_MESSAGE_TYPES.GET_INTERACTIVE_ELEMENTS,
-          includeCoordinates: true,
-        });
-
-        if (fallback && fallback.success && Array.isArray(fallback.elements)) {
-          const limited = fallback.elements.slice(0, 150);
-          // Merge user markers at the front, de-duplicated by selector
-          const markerEls = userMarkers.map((m) => ({
-            type: 'marker',
-            selector: m.selector,
-            text: m.name,
-            selectorType: m.selectorType || 'css',
-            isInteractive: true,
-            source: 'marker',
-            priority: 'highest',
-          }));
-          const seen = new Set(markerEls.map((e) => e.selector));
-          const merged = [...markerEls, ...limited.filter((e: any) => !seen.has(e.selector))];
-
-          basePayload.fallbackUsed = true;
-          basePayload.fallbackSource = 'get_interactive_elements';
-          basePayload.reason = treeOk ? 'sparse_tree' : resp?.error || 'tree_failed';
-          basePayload.elements = merged;
-          basePayload.count = fallback.elements.length;
-          if (!basePayload.pageContent) {
-            basePayload.pageContent = formatElementsAsPageContent(merged);
-          }
-
-          return {
-            content: [{ type: 'text', text: JSON.stringify(basePayload) }],
-            isError: false,
-          };
-        }
-      } catch (fallbackErr) {
-        console.warn('read_page fallback failed:', fallbackErr);
+        await this.injectContentScript(
+          tab.id,
+          ['inject-scripts/interactive-elements-helper.js'],
+          false,
+          'ISOLATED',
+          true, // match primary injection: scan all frames
+        );
+      } catch (injectErr) {
+        // Log but continue — fallback injection failure is not fatal
+        console.warn('[ReadPage] Fallback script injection failed, continuing anyway:', injectErr);
       }
 
-      // If we reach here, both tree (usable) and fallback failed
-      return createErrorResponse(
-        treeOk
-          ? 'Accessibility tree is too sparse and fallback failed'
-          : resp?.error || 'Failed to generate accessibility tree and fallback failed',
+      // Wait for script readiness via dedicated ping (not the generic this.name_ping)
+      const scriptReady = await this.waitForScript(tab.id, 'chrome_get_interactive_elements_ping');
+
+      let fallback: any = null;
+      if (scriptReady) {
+        try {
+          // 3s is generous for content-script synchronous message handling (normally <50ms)
+          fallback = await Promise.race([
+            chrome.tabs.sendMessage(tab.id, {
+              action: TOOL_MESSAGE_TYPES.GET_INTERACTIVE_ELEMENTS,
+              includeCoordinates: true,
+            }),
+            new Promise<null>((r) => setTimeout(() => r(null), 3000)),
+          ]);
+        } catch (msgErr) {
+          console.warn('[ReadPage] Fallback message send failed:', msgErr);
+        }
+      }
+
+      console.log(
+        '[ReadPage] Fallback response:',
+        fallback ? JSON.stringify(fallback).slice(0, 300) : 'null',
       );
+
+      if (
+        fallback &&
+        fallback.success &&
+        Array.isArray(fallback.elements) &&
+        fallback.elements.length > 0
+      ) {
+        const limited = fallback.elements.slice(0, 150);
+        // Merge user markers at the front, de-duplicated by selector
+        const markerEls = userMarkers.map((m) => ({
+          type: 'marker',
+          selector: m.selector,
+          text: m.name,
+          selectorType: m.selectorType || 'css',
+          isInteractive: true,
+          source: 'marker',
+          priority: 'highest',
+        }));
+        const seen = new Set(markerEls.map((e) => e.selector));
+        const merged = [...markerEls, ...limited.filter((e: any) => !seen.has(e.selector))];
+
+        basePayload.fallbackUsed = true;
+        basePayload.fallbackSource = 'get_interactive_elements';
+        basePayload.reason = treeOk ? 'sparse_tree' : resp?.error || 'tree_failed';
+        basePayload.elements = merged;
+        basePayload.count = merged.length; // consistent with actual returned array
+        if (!basePayload.pageContent) {
+          basePayload.pageContent = formatElementsAsPageContent(merged);
+        }
+
+        return {
+          content: [{ type: 'text', text: JSON.stringify(basePayload) }],
+          isError: false,
+        };
+      }
+
+      // --- Both tree and fallback returned sparse/empty results ---
+      // IMPORTANT: This is NOT an error — the page genuinely has minimal content.
+      // Return a successful response with a warning so the agent can decide what to do next
+      // (e.g., take a screenshot, navigate to a different URL).
+      // Returning an error here wastes a tool-call turn and may confuse the agent.
+
+      const diag = `treeOk=${treeOk}, lines=${lines}, refCount=${refCount}, isSparse=${isSparse}`;
+      const fallbackInfo = fallback
+        ? `fallback: success=${fallback.success}, elements=${Array.isArray(fallback.elements) ? fallback.elements.length : 'N/A'}`
+        : 'fallback: no response or script not ready';
+      console.warn(`[ReadPage] Sparse page detected. Diagnostics: ${diag}, ${fallbackInfo}`);
+
+      basePayload.sparse = true;
+      basePayload.warning = `Page has minimal content (${lines} visible elements, ${refCount} interactive refs). The page may be blank, a login screen, or a media-only page. Consider using the 'screenshot' tool to see what is visually on the page.`;
+
+      return {
+        content: [{ type: 'text', text: JSON.stringify(basePayload) }],
+        isError: false,
+      };
     } catch (error) {
       console.error('Error in read page tool:', error);
       return createErrorResponse(
         `Error generating accessibility tree: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  }
+
+  /**
+   * Wait for a content script to respond to a ping, confirming it is loaded and ready.
+   * Returns true if the script responds within timeout, false otherwise.
+   */
+  private async waitForScript(
+    tabId: number,
+    pingAction: string,
+    timeoutMs = 2000,
+  ): Promise<boolean> {
+    try {
+      const response = await Promise.race([
+        chrome.tabs.sendMessage(tabId, { action: pingAction }),
+        new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
+      ]);
+      return response && response.status === 'pong';
+    } catch {
+      return false;
     }
   }
 }

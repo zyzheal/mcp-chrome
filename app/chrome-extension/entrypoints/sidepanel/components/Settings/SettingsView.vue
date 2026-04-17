@@ -436,7 +436,7 @@
           <div v-if="nativeServerRunning" class="mcp-config-section">
             <div class="mcp-config-header">
               <span class="mcp-config-label">MCP 配置 JSON</span>
-              <button class="btn btn-sm btn-secondary" @click="copyMcpConfig">
+              <button class="copy-mcp-btn" @click="copyMcpConfig">
                 {{ copyButtonText }}
               </button>
             </div>
@@ -782,6 +782,9 @@ async function saveConfig() {
         model: resolvedModel.value,
       }),
     );
+
+    // Notify other components (same-window reactivity for AgentChat mode indicator)
+    window.dispatchEvent(new CustomEvent('openai-config-changed'));
 
     // Attempt to save to native server (best-effort, non-blocking)
     const port = await getServerPort();
@@ -1507,20 +1510,45 @@ onUnmounted(() => {
 }
 
 .mcp-config-section {
-  margin-top: 8px;
+  margin-top: 16px;
+  padding: 12px;
+  background: var(--ac-surface, #fff);
+  border: 1px solid var(--ac-border, #e7e5e4);
+  border-radius: var(--ac-radius-card, 12px);
 }
 
 .mcp-config-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 0;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.copy-mcp-btn {
+  flex: none;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid var(--ac-border, #e7e5e4);
+  border-radius: var(--ac-radius-button, 8px);
+  background: var(--ac-surface-muted, #f5f5f5);
+  color: var(--ac-text, #262626);
+  cursor: pointer;
+  transition: all var(--ac-motion-fast, 150ms) ease;
+  white-space: nowrap;
+}
+
+.copy-mcp-btn:hover {
+  background: var(--ac-hover-bg, #e5e5e5);
 }
 
 .mcp-config-label {
   font-size: 13px;
   font-weight: 500;
   color: var(--ac-text, #262626);
+  white-space: nowrap;
 }
 
 .mcp-config-content {

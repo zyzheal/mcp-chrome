@@ -1278,11 +1278,14 @@ class ComputerTool extends BaseBrowserToolExecutor {
         }
       }
       case 'screenshot': {
-        // Reuse existing screenshot tool; it already supports base64 save option
+        // Return screenshot as base64 for AI context.
+        // Do NOT auto-save PNG - AI only needs the image data for visual reasoning.
+        // If user wants to save, they can use chrome_screenshot directly with savePng=true.
         const result = await screenshotTool.execute({
           name: 'computer',
           storeBase64: true,
           fullPage: false,
+          savePng: false,
         });
         return result;
       }

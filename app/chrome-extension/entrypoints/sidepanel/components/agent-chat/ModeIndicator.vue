@@ -280,7 +280,10 @@ const tooltipText = computed(() => {
 });
 
 const canSwitch = computed(() => {
-  return !props.nativeServerReady || (props.hasOpenAIConfig && props.useNativeServer);
+  // Allow switching if:
+  // 1. OpenAI config exists (can switch to/from it)
+  // 2. Native server not ready (need to show config options)
+  return props.hasOpenAIConfig || !props.nativeServerReady;
 });
 
 // =============================================================================

@@ -84,6 +84,14 @@ async function checkNativeServerRunning(): Promise<boolean> {
  */
 async function executeToolCall(toolName: string, args: Record<string, unknown>): Promise<string> {
   return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(
+        new Error(
+          `Tool "${toolName}" timed out after 30s. The page may be unresponsive or the content script failed to load.`,
+        ),
+      );
+    }, 30000);
+
     chrome.runtime.sendMessage(
       {
         type: BACKGROUND_MESSAGE_TYPES.EXECUTE_TOOL_CALL,
@@ -94,6 +102,7 @@ async function executeToolCall(toolName: string, args: Record<string, unknown>):
         },
       },
       (response) => {
+        clearTimeout(timeout);
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message || 'Background script error'));
           return;
@@ -108,7 +117,14 @@ async function executeToolCall(toolName: string, args: Record<string, unknown>):
             .filter((c: any) => c.type === 'text')
             .map((c: any) => c.text)
             .join('\n');
-          resolve(textParts || JSON.stringify(result));
+          // Check isError flag from MCP-style tool result
+          if (result.isError) {
+            resolve(
+              `[TOOL_ERROR] Tool "${toolName}" failed: ${textParts || JSON.stringify(result)}`,
+            );
+          } else {
+            resolve(textParts || JSON.stringify(result));
+          }
         } else {
           resolve(JSON.stringify(result ?? response));
         }
@@ -246,6 +262,28 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
     let maxTurns = 10;
     let assistantContent = '';
 
+    // Track executed tool calls for loop detection (normalized for JSON key order)
+    const recentToolCallKeys = new Set<string>();
+    const MAX_REPEATED_CALLS = 3;
+    let consecutiveErrors = 0;
+    const MAX_CONSECUTIVE_ERRORS = 3;
+
+    // Normalize tool call args to a stable string (sorted keys) for repeat detection
+    const normalizeToolCallKey = (name: string, argsStr: string): string => {
+      try {
+        const args = JSON.parse(argsStr);
+        const sorted = Object.keys(args)
+          .sort()
+          .reduce((obj: any, key) => {
+            obj[key] = args[key];
+            return obj;
+          }, {});
+        return `${name}:${JSON.stringify(sorted)}`;
+      } catch {
+        return `${name}:${argsStr}`;
+      }
+    };
+
     while (maxTurns-- > 0) {
       if (currentRequestId.value !== requestId) {
         throw new Error('Request cancelled');
@@ -256,12 +294,21 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
         apiUrl += apiUrl.endsWith('/v1') ? '/chat/completions' : '/v1/chat/completions';
       }
 
+      const turnNumber = 10 - maxTurns;
+
+      // CRITICAL: Always include systemNote in every turn.
+      // Some providers (DashScope/Qwen) drop system instructions after tool rounds,
+      // causing AI to revert to English or skip tool summaries.
+      const bodyMessages = systemNote
+        ? [{ role: 'system', content: systemNote }, ...messages]
+        : messages;
+      console.log(
+        `[OpenAI Chat] Turn ${turnNumber}: messages count=${bodyMessages.length}, roles=${bodyMessages.map((m: any) => m.role).join(', ')}`,
+      );
+
       const requestBody: any = {
         model: config.model,
-        messages:
-          systemNote && messages === initialMessages
-            ? [{ role: 'system', content: systemNote }, ...messages]
-            : messages,
+        messages: bodyMessages,
         stream: false,
       };
 
@@ -298,6 +345,16 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
       const message = choice.message;
       assistantContent = message?.content ?? '';
 
+      console.log(
+        `[OpenAI Chat] Turn ${turnNumber}: API response - content="${(assistantContent || '(empty)').substring(0, 100)}", has_tool_calls=${!!message?.tool_calls?.length}`,
+      );
+      if (message?.tool_calls?.length > 0) {
+        console.log(
+          `[OpenAI Chat] Turn ${turnNumber}: tool_calls =`,
+          message.tool_calls.map((tc: any) => tc.function?.name).join(', '),
+        );
+      }
+
       if (data.usage) {
         lastUsage.value = {
           inputTokens: data.usage.prompt_tokens ?? 0,
@@ -309,16 +366,51 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
       }
 
       const toolCalls = message?.tool_calls;
-      if (!toolCalls || toolCalls.length === 0) break;
+      if (!toolCalls || toolCalls.length === 0) {
+        console.log(`[OpenAI Chat] Turn ${turnNumber}: no tool calls, assistant response only`);
+        break;
+      }
+
+      console.log(
+        `[OpenAI Chat] Turn ${turnNumber}: ${toolCalls.length} tool call(s) requested:`,
+        toolCalls.map((tc: any) => `${tc.function?.name}`).join(', '),
+      );
 
       requestState.value = 'running';
       isStreaming.value = true;
+
+      // Check for repeated tool calls
+      for (const tc of toolCalls) {
+        const normalizedKey = normalizeToolCallKey(
+          tc.function?.name,
+          tc.function?.arguments || '{}',
+        );
+        if (recentToolCallKeys.has(normalizedKey)) {
+          const existing = [...recentToolCallKeys].filter((k) =>
+            k.startsWith(`${tc.function?.name}:`),
+          ).length;
+          if (existing >= MAX_REPEATED_CALLS) {
+            console.warn(
+              `[OpenAI Chat] Detected repeated tool call (${existing}x): ${tc.function?.name}`,
+            );
+            return '检测到重复的工具调用循环。AI 多次尝试相同的操作但没有进展。请尝试更具体的指令，或检查目标页面是否正确。';
+          }
+        }
+      }
+
+      // Track this turn's tool calls for repeat detection
+      for (const tc of toolCalls) {
+        recentToolCallKeys.add(
+          normalizeToolCallKey(tc.function?.name, tc.function?.arguments || '{}'),
+        );
+      }
 
       const toolResults: Array<{
         role: 'tool';
         tool_call_id: string;
         content: string;
       }> = [];
+      let turnHasError = false;
 
       for (const toolCall of toolCalls) {
         const toolName = toolCall.function?.name;
@@ -331,31 +423,61 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
             tool_call_id: toolCall.id,
             content: `Error: Invalid JSON arguments: ${toolCall.function?.arguments}`,
           });
+          turnHasError = true;
+          console.error(`[OpenAI Chat] Turn ${turnNumber}: Invalid JSON args for ${toolName}`);
           continue;
         }
 
-        console.log(`[OpenAI Chat] Executing tool: ${toolName}`, toolArgs);
+        console.log(
+          `[OpenAI Chat] Turn ${turnNumber}: Executing ${toolName}`,
+          JSON.stringify(toolArgs).substring(0, 300),
+        );
         try {
           const result = await executeToolCall(toolName, toolArgs);
+          const isToolError = result.startsWith('[TOOL_ERROR]');
+          console.log(
+            `[OpenAI Chat] Turn ${turnNumber}: ${toolName} ${isToolError ? 'FAILED' : 'OK'} (${result.length} chars)`,
+            result.substring(0, 200),
+          );
           toolResults.push({
             role: 'tool',
             tool_call_id: toolCall.id,
             content: result,
           });
+          if (isToolError) {
+            turnHasError = true;
+            consecutiveErrors++;
+          } else {
+            consecutiveErrors = 0; // Reset on success
+          }
+          console.log(
+            `[OpenAI Chat] Turn ${turnNumber}: tool result pushed for ${toolName} (${result.substring(0, 150)}...)`,
+          );
         } catch (error) {
-          console.error(`[OpenAI Chat] Tool ${toolName} failed:`, error);
+          console.error(`[OpenAI Chat] Turn ${turnNumber}: Tool ${toolName} threw:`, error);
+          const errorMsg = sanitizeError(error);
           toolResults.push({
             role: 'tool',
             tool_call_id: toolCall.id,
-            content: `Error: ${sanitizeError(error)}`,
+            content: `Error: ${errorMsg}`,
           });
+          turnHasError = true;
+          consecutiveErrors++;
         }
+      }
+
+      // Break if too many consecutive tool errors
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        console.warn(`[OpenAI Chat] Too many consecutive tool errors (${consecutiveErrors})`);
+        return `工具执行连续失败（已失败 ${consecutiveErrors} 次）。请检查浏览器状态或尝试不同的操作。`;
       }
 
       messages.push({
         role: 'assistant',
-        content: assistantContent || null,
-        tool_calls,
+        // When tool_calls exist, some providers (DashScope) reject empty string content.
+        // Use undefined to omit the field entirely when there's no text.
+        content: assistantContent || undefined,
+        tool_calls: toolCalls,
       });
 
       messages.push(
@@ -365,13 +487,33 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
           content: r.content,
         })),
       );
+
+      console.log(
+        `[OpenAI Chat] Turn ${turnNumber}: after pushing, messages count=${messages.length}, roles=${messages.map((m: any) => m.role).join(', ')}`,
+      );
     }
 
     if (maxTurns <= 0) {
       console.warn('[OpenAI Chat] Max tool call turns reached (10)');
+      const lastTools = [...recentToolCallKeys].slice(-3);
+      const toolSummary =
+        lastTools.length > 0
+          ? `最后尝试的工具: ${lastTools.map((k) => k.split(':')[0]).join(', ')}`
+          : '';
+      return `已达到最大工具调用次数限制（10轮）。操作未能完成，可能的原因：\n1. 目标页面元素无法定位\n2. 页面结构发生变化\n3. 工具执行遇到错误\n\n${toolSummary}\n\n请尝试更具体的指令，或分步骤执行操作。`;
     }
 
-    return assistantContent || '';
+    console.log(`[OpenAI Chat] Loop ended. assistantContent length=${assistantContent.length}`);
+
+    // Safety net: if AI returned empty content but tools were called successfully,
+    // generate a summary so the user sees something meaningful.
+    if (!assistantContent && recentToolCallKeys.size > 0) {
+      const lastKey = [...recentToolCallKeys].pop()!;
+      const toolName = lastKey.split(':')[0];
+      return `工具 "${toolName}" 已执行完成。请查看页面变化确认操作结果。`;
+    }
+
+    return assistantContent;
   }
 
   /**
@@ -397,25 +539,11 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
       return;
     }
 
-    // Check if user needs browser tools but is in text-only mode or native server not running
-    if (
-      !config.textOnlyMode &&
-      config.promptForNativeServer &&
-      needsBrowserTools(instructionText)
-    ) {
-      // Check if native server is running
-      const serverRunning = await checkNativeServerRunning();
-      if (!serverRunning) {
-        errorMessage.value =
-          '检测到您可能需要使用浏览器扩展工具（如点击、打开网页等）。当前 Native Server 未运行，请：\\n\\n1. 启动 Native Server：cd /Users/heal/mcp-chrome/app/native-server && npm run dev\\n2. 或在设置中开启"仅文本返回模式"（仅聊天对话推荐）';
-        return;
-      }
-    }
-
-    // If text-only mode is enabled, add a system note to avoid tool usage
-    let systemNote = '';
+    // Always instruct AI to respond in Chinese
+    let systemNote =
+      '请用中文回复用户。使用浏览器工具时，如果操作成功，请简要说明执行结果；如果失败，请告知用户可能的原因。';
     if (config.textOnlyMode) {
-      systemNote = '（当前为仅文本模式，无法使用浏览器工具，只能进行文本对话）';
+      systemNote += '\n（当前为仅文本模式，无法使用浏览器工具，只能进行文本对话）';
     }
 
     const sessionId = options.getSessionId();
@@ -501,32 +629,32 @@ export function useOpenAIChat(options: UseOpenAIChatOptions) {
         );
         assistantMsg.requestId = requestId;
         messages.value.push(assistantMsg);
-      }
 
-      // Persist messages
-      if (options.persistMessage) {
-        const storedUser: AgentStoredMessage = {
-          id: optimisticMessage.id,
-          sessionId: optimisticMessage.sessionId,
-          role: optimisticMessage.role,
-          content: optimisticMessage.content,
-          messageType: optimisticMessage.messageType,
-          requestId,
-          createdAt: optimisticMessage.createdAt,
-          metadata: optimisticMessage.metadata,
-        };
-        options.persistMessage(storedUser);
+        // Persist messages
+        if (options.persistMessage) {
+          const storedUser: AgentStoredMessage = {
+            id: optimisticMessage.id,
+            sessionId: optimisticMessage.sessionId,
+            role: optimisticMessage.role,
+            content: optimisticMessage.content,
+            messageType: optimisticMessage.messageType,
+            requestId,
+            createdAt: optimisticMessage.createdAt,
+            metadata: optimisticMessage.metadata,
+          };
+          options.persistMessage(storedUser);
 
-        const storedAssistant: AgentStoredMessage = {
-          id: assistantMsg.id,
-          sessionId: assistantMsg.sessionId,
-          role: assistantMsg.role,
-          content: assistantMsg.content,
-          messageType: assistantMsg.messageType,
-          requestId,
-          createdAt: assistantMsg.createdAt,
-        };
-        options.persistMessage(storedAssistant);
+          const storedAssistant: AgentStoredMessage = {
+            id: assistantMsg.id,
+            sessionId: assistantMsg.sessionId,
+            role: assistantMsg.role,
+            content: assistantMsg.content,
+            messageType: assistantMsg.messageType,
+            requestId,
+            createdAt: assistantMsg.createdAt,
+          };
+          options.persistMessage(storedAssistant);
+        }
       }
 
       requestState.value = 'completed';

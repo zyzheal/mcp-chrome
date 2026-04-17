@@ -544,106 +544,71 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
   }
 
   /**
-   * Sync all existing sessions to native server if available.
-   * Called when server becomes ready to ensure local sessions are synced.
-   * Only syncs once per page load to avoid duplicate sync attempts.
+   * Sync all existing sessions to native server. Silent operation.
+   * Called when explicitly needed (not during startup).
    */
   async function syncAllSessionsToServer(): Promise<void> {
     // Prevent duplicate sync attempts
-    if (sessionsSynced) {
-      console.log('[StandaloneAgent] Sessions already synced to server, skipping duplicate sync');
-      return;
-    }
+    if (sessionsSynced) return;
 
     const port = await getServerPort();
-    if (!port) {
-      console.log('[StandaloneAgent] Native server not running, skipping session sync');
-      return;
-    }
+    if (!port) return;
 
     try {
       // First sync all projects
       for (const project of projects.value) {
-        await syncProjectToServer(project);
+        await syncProjectToServer(project, true);
       }
 
       // Then sync all sessions
       const stored = await loadArrayFromStorage<AgentSession>(STORAGE_KEY_SESSIONS, []);
       if (stored.length === 0) {
-        console.log('[StandaloneAgent] No local sessions to sync');
         sessionsSynced = true;
         return;
       }
 
-      console.log(`[StandaloneAgent] Syncing ${stored.length} sessions to server...`);
-      const results = await Promise.all(stored.map((session) => syncSessionToServer(session)));
-      const successCount = results.filter((r) => r).length;
-      console.log(
-        `[StandaloneAgent] Finished syncing ${stored.length} sessions: ${successCount}/${stored.length} succeeded`,
+      const results = await Promise.all(
+        stored.map((session) => syncSessionToServer(session, 0, true)),
       );
-
-      // Mark as synced only if all sessions succeeded
+      const successCount = results.filter((r) => r).length;
       if (successCount === stored.length) {
         sessionsSynced = true;
       }
-    } catch (error) {
-      console.error('[StandaloneAgent] Failed to sync sessions:', error);
+    } catch {
+      // Silent failure for best-effort sync
     }
   }
 
   /**
-   * Check if a session exists on the native server.
-   * If not, sync it. Returns true if session exists or was synced successfully.
+   * Ensure session is synced to server before sending a message.
+   * Uses lazy POST-only sync - no GET probing.
+   * Returns true if server is reachable, false otherwise.
    */
   async function ensureSessionSynced(sessionId: string): Promise<boolean> {
     const port = await getServerPort();
-    if (!port) {
-      console.log('[StandaloneAgent] Native server not running, cannot check session sync');
-      return false;
-    }
+    if (!port) return false;
 
     try {
-      // Try to get session from server
-      const url = `http://127.0.0.1:${port}/agent/sessions/${encodeURIComponent(sessionId)}`;
-      const response = await fetch(url);
+      // Find session in local storage
+      const stored = await loadArrayFromStorage<AgentSession>(STORAGE_KEY_SESSIONS, []);
+      const session = stored.find((s) => s.id === sessionId);
+      if (!session) return true; // Session not in local storage, nothing to sync
 
-      if (response.ok) {
-        // Session exists on server
-        console.log(`[StandaloneAgent] Session ${sessionId} confirmed on server`);
-        return true;
-      }
-
-      if (response.status === 404) {
-        // Session doesn't exist on server - find it locally and sync
-        console.log(`[StandaloneAgent] Session ${sessionId} not found on server, syncing...`);
-        const stored = await loadArrayFromStorage<AgentSession>(STORAGE_KEY_SESSIONS, []);
-        const session = stored.find((s) => s.id === sessionId);
-        if (session) {
-          // Ensure project is synced first
-          const project = projects.value.find((p) => p.id === session.projectId);
-          if (project) {
-            await syncProjectToServer(project);
-          }
-          // Sync the session and return result
-          const syncResult = await syncSessionToServer(session);
-          if (syncResult) {
-            console.log(`[StandaloneAgent] Session ${sessionId} synced to server successfully`);
-          } else {
-            console.error(`[StandaloneAgent] Session ${sessionId} sync failed`);
-          }
-          return syncResult;
+      // Sync project + session to server (POST only, no GET)
+      let project = projects.value.find((p) => p.id === session.projectId);
+      if (!project) {
+        const storedProjects = await loadArrayFromStorage<AgentProject>(STORAGE_KEY_PROJECTS, []);
+        project = storedProjects.find((p) => p.id === session.projectId);
+        if (project) {
+          projects.value = storedProjects;
         }
-        console.warn(`[StandaloneAgent] Session ${sessionId} not found locally either`);
-        return false;
       }
-
-      // Other error - log but don't fail
-      console.warn(
-        `[StandaloneAgent] Failed to check session ${sessionId}: HTTP ${response.status}`,
-      );
-      return false;
-    } catch (error) {
-      console.error('[StandaloneAgent] Error checking session sync:', error);
+      if (project) {
+        await syncProjectToServer(project, true);
+      }
+      await syncSessionToServer(session, 0, true);
+      return true;
+    } catch {
       return false;
     }
   }
@@ -663,7 +628,8 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
       const response = await chrome.runtime.sendMessage({
         type: 'get_server_status',
       });
-      if (response?.serverStatus?.port) {
+      // Only return port if server is actually running, not just cached
+      if (response?.serverStatus?.isRunning && response?.serverStatus?.port) {
         return response.serverStatus.port;
       }
     } catch {
@@ -673,19 +639,15 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
   }
 
   /**
-   * Sync project to native server if available.
-   * Best-effort, non-blocking.
+   * Sync project to native server. Best-effort, no GET probing.
+   * POST directly - server handles duplicates via idempotent upsert.
    */
-  async function syncProjectToServer(project: AgentProject): Promise<boolean> {
+  async function syncProjectToServer(project: AgentProject, silent = false): Promise<boolean> {
     const port = await getServerPort();
-    if (!port) {
-      console.log('[StandaloneAgent] Native server not running, cannot sync project');
-      return false;
-    }
+    if (!port) return false;
 
     try {
       const url = `http://127.0.0.1:${port}/agent/projects`;
-      console.log(`[StandaloneAgent] Syncing project ${project.id} to server...`);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -699,61 +661,48 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
           enableChromeMcp: project.enableChromeMcp,
         }),
       });
-      const responseText = await response.text().catch(() => '');
       if (!response.ok) {
-        if (response.status === 409) {
-          console.log(`[StandaloneAgent] Project already exists on server: ${project.id}`);
-          return true;
+        // 409 (Conflict) or 200-range are both fine - project exists
+        if (response.status === 409 || response.status < 500) return true;
+        if (!silent) {
+          const responseText = await response.text().catch(() => '');
+          console.error(
+            `[StandaloneAgent] Failed to sync project ${project.id}: HTTP ${response.status} ${responseText}`,
+          );
         }
-        console.error(
-          `[StandaloneAgent] Failed to sync project ${project.id}: HTTP ${response.status} ${responseText}`,
-        );
         return false;
       }
-      console.log(`[StandaloneAgent] Project synced to server: ${project.id}`);
       return true;
-    } catch (err) {
-      console.error(`[StandaloneAgent] Failed to sync project:`, err);
-      return false;
+    } catch {
+      return false; // Network error, best-effort
     }
   }
 
   /**
-   * Sync session to native server if available.
-   * @param retryCount - Number of retries attempted (for internal use)
-   * @returns true if sync succeeded, false if failed after retries
+   * Sync session to native server. No GET probing.
+   * POST directly - server handles duplicates via UNIQUE constraint.
    */
-  async function syncSessionToServer(session: AgentSession, retryCount = 0): Promise<boolean> {
+  async function syncSessionToServer(
+    session: AgentSession,
+    retryCount = 0,
+    silent = false,
+  ): Promise<boolean> {
     const port = await getServerPort();
-    if (!port) {
-      console.log('[StandaloneAgent] Native server not running, session stored locally only');
-      return false;
-    }
+    if (!port) return false;
 
     try {
-      // First, ensure project exists on server
+      // Ensure project is synced first (also silent during startup)
       let project = projects.value.find((p) => p.id === session.projectId);
-
-      // If project not found in reactive state, try to load from storage
       if (!project) {
-        console.log(
-          `[StandaloneAgent] Project ${session.projectId} not in projects.value, loading from storage...`,
-        );
         const storedProjects = await loadArrayFromStorage<AgentProject>(STORAGE_KEY_PROJECTS, []);
         project = storedProjects.find((p) => p.id === session.projectId);
         if (project) {
-          console.log(`[StandaloneAgent] Project ${session.projectId} loaded from storage`);
-          // Update reactive state
           projects.value = storedProjects;
         }
       }
-
       if (project) {
-        await syncProjectToServer(project);
+        await syncProjectToServer(project, silent);
       } else {
-        console.error(
-          `[StandaloneAgent] Project ${session.projectId} not found in local state or storage, cannot sync session`,
-        );
         return false;
       }
 
@@ -772,47 +721,32 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
 
-        // Handle 409 Conflict - session already exists on server
-        if (response.status === 409) {
-          console.log(
-            `[StandaloneAgent] Session ${session.id} already exists on server (409 Conflict), skipping sync`,
-          );
-          return true; // Consider it as success since session exists
+        // 409 (Conflict) or UNIQUE constraint = session already exists, treat as success
+        if (response.status === 409 || errorText.includes('UNIQUE constraint failed')) {
+          return true;
         }
 
-        // Handle UNIQUE constraint error in 500 response
-        if (errorText.includes('UNIQUE constraint failed')) {
-          console.log(
-            `[StandaloneAgent] Session ${session.id} already exists on server (UNIQUE constraint), skipping sync`,
-          );
-          return true; // Consider it as success since session exists
-        }
-
-        // Retry logic: if server returns 400 (e.g., project not found yet), retry up to 3 times
-        if (response.status === 400 && retryCount < 3) {
-          console.log(`[StandaloneAgent] Sync failed (400), retrying... (${retryCount + 1}/3)`);
+        // For non-silent mode, retry 400 errors up to 3 times
+        if (response.status === 400 && retryCount < 3 && !silent) {
           await new Promise((resolve) => setTimeout(resolve, 500));
-          return syncSessionToServer(session, retryCount + 1);
+          return syncSessionToServer(session, retryCount + 1, silent);
         }
 
-        console.error(
-          `[StandaloneAgent] Failed to sync session ${session.id}: HTTP ${response.status} ${errorText}`,
-        );
+        if (!silent) {
+          console.error(
+            `[StandaloneAgent] Failed to sync session ${session.id}: HTTP ${response.status} ${errorText}`,
+          );
+        }
         return false;
       }
-      console.log(`[StandaloneAgent] Session synced to server: ${session.id}`);
       return true;
     } catch (err) {
-      // Network error - retry up to 3 times with exponential backoff
-      if (retryCount < 3) {
+      // Network error - retry up to 3 times (only in non-silent mode)
+      if (retryCount < 3 && !silent) {
         const delay = 500 * Math.pow(2, retryCount);
-        console.log(
-          `[StandaloneAgent] Sync error, retrying in ${delay}ms... (${retryCount + 1}/3)`,
-        );
         await new Promise((resolve) => setTimeout(resolve, delay));
-        return syncSessionToServer(session, retryCount + 1);
+        return syncSessionToServer(session, retryCount + 1, silent);
       }
-      console.error(`[StandaloneAgent] Failed to sync session:`, err);
       return false;
     }
   }
@@ -886,12 +820,17 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
       selectedSessionId.value = session.id;
       await saveSelectedSessionId();
 
-      // Sync to native server (blocking to ensure server has the session before use)
-      const syncResult = await syncSessionToServer(session);
-      if (!syncResult) {
-        console.error(`[StandaloneAgent] Failed to sync session ${session.id} to server`);
-        sessionError.value = 'Failed to sync session to server';
-        return null;
+      // Sync to native server (non-blocking, best-effort)
+      // Session is created locally regardless of server availability
+      try {
+        const syncResult = await syncSessionToServer(session);
+        if (!syncResult) {
+          console.debug(
+            `[StandaloneAgent] Session ${session.id} created locally, server not available for sync`,
+          );
+        }
+      } catch {
+        // Server unavailable, session still saved locally
       }
 
       return session;
@@ -967,50 +906,17 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
   ): Promise<AgentSession | null> {
     // Prevent concurrent calls to ensureDefaultSession
     if (ensureDefaultSessionRunning) {
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] Already running, skipping concurrent call',
-      );
       return selectedSession.value;
     }
     ensureDefaultSessionRunning = true;
 
     try {
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] Starting for project:',
-        projectId,
-        'engine:',
-        engineName,
-      );
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] Current sessions.value.length:',
-        sessions.value.length,
-      );
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] Current selectedSessionId:',
-        selectedSessionId.value,
-      );
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] allSessions.value.length:',
-        allSessions.value.length,
-      );
-
-      // CRITICAL: Check storage directly first before any reactive state checks
-      // This is the most reliable way to determine if sessions exist
+      // Check storage directly first
       const storedSessions = await loadArrayFromStorage<AgentSession>(STORAGE_KEY_SESSIONS, []);
       const storedSessionsForProject = storedSessions.filter((s) => s.projectId === projectId);
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] Storage check: Found',
-        storedSessionsForProject.length,
-        'sessions in storage for this project',
-      );
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] Storage sessions:',
-        storedSessionsForProject.map((s) => ({ id: s.id, projectId: s.projectId, name: s.name })),
-      );
 
-      // If sessions exist in storage, use them (don't create new ones)
+      // If sessions exist in storage, use them
       if (storedSessionsForProject.length > 0) {
-        console.warn('[StandaloneAgent.ensureDefaultSession] Using existing sessions from storage');
         allSessions.value = storedSessions.sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
         );
@@ -1023,29 +929,17 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
           !selectedSessionId.value ||
           !sessions.value.find((s) => s.id === selectedSessionId.value)
         ) {
-          console.warn(
-            '[StandaloneAgent.ensureDefaultSession] Selecting first session from storage:',
-            sessions.value[0].id,
-          );
           await selectSession(sessions.value[0].id);
         }
         return selectedSession.value;
       }
 
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] No sessions in storage, will check reactive state...',
-      );
-
-      // Fallback: Check reactive state (should not happen if storage was empty)
+      // Fallback: Check reactive state
       if (sessions.value.length > 0) {
         if (
           !selectedSessionId.value ||
           !sessions.value.find((s) => s.id === selectedSessionId.value)
         ) {
-          console.warn(
-            '[StandaloneAgent.ensureDefaultSession] Selecting first session from reactive state:',
-            sessions.value[0].id,
-          );
           await selectSession(sessions.value[0].id);
         }
         return selectedSession.value;
@@ -1054,11 +948,6 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
       // Also check allSessions as fallback
       const sessionsForProject = allSessions.value.filter((s) => s.projectId === projectId);
       if (sessionsForProject.length > 0) {
-        console.warn(
-          '[StandaloneAgent.ensureDefaultSession] Found',
-          sessionsForProject.length,
-          'sessions in allSessions',
-        );
         sessions.value = sessionsForProject;
         if (
           !selectedSessionId.value ||
@@ -1070,9 +959,6 @@ export function useStandaloneAgent(): StandaloneAgentReturn {
       }
 
       // No sessions found anywhere - create default session
-      console.warn(
-        '[StandaloneAgent.ensureDefaultSession] No sessions found anywhere, creating default session',
-      );
       return createSession(projectId, {
         engineName,
         name: 'Default Session',

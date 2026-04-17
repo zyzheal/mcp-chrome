@@ -5,6 +5,7 @@
 import { ref, computed, onUnmounted } from 'vue';
 import { NativeMessageType } from 'chrome-mcp-shared';
 import { BACKGROUND_MESSAGE_TYPES } from '@/common/message-types';
+import { NATIVE_HOST } from '@/common/constants';
 import type { AgentEngineInfo, RealtimeEvent } from 'chrome-mcp-shared';
 
 interface ServerStatus {
@@ -249,7 +250,7 @@ export function useAgentServer(options: UseAgentServerOptions = {}) {
     };
 
     es.onerror = (error) => {
-      console.error('[AgentServer] SSE error:', error);
+      console.debug('[AgentServer] SSE error:', error);
       es.close();
       eventSource.value = null;
 
@@ -257,7 +258,7 @@ export function useAgentServer(options: UseAgentServerOptions = {}) {
       if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
         const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts);
         reconnectAttempts++;
-        console.log(`[AgentServer] Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+        console.debug(`[AgentServer] Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
         setTimeout(() => {
           if (isServerReady.value) {
             openEventSource();

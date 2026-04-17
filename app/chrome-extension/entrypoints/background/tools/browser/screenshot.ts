@@ -292,17 +292,10 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
         // Include base64 data in response (without prefix)
         const base64Data = compressed.dataUrl.replace(/^data:image\/[^;]+;base64,/, '');
         results.base64 = base64Data;
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ base64Data, mimeType: compressed.mimeType }),
-            },
-          ],
-          isError: false,
-        };
+        results.mimeType = compressed.mimeType;
       }
 
+      // Save PNG to downloads if requested (also when storeBase64 is true)
       if (savePng === true) {
         // Save PNG file to downloads
         this.logInfo('Saving PNG...');
@@ -340,6 +333,25 @@ class ScreenshotTool extends BaseBrowserToolExecutor {
           console.error('Error saving PNG file:', error);
           results.saveError = String(error instanceof Error ? error.message : error);
         }
+      }
+
+      // If storeBase64 was requested, return with base64 data
+      if (storeBase64 === true) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                base64Data: results.base64,
+                mimeType: results.mimeType,
+                fileSaved: results.fileSaved === true,
+                filename: results.filename,
+                saveError: results.saveError,
+              }),
+            },
+          ],
+          isError: false,
+        };
       }
     } catch (error) {
       console.error('Error during screenshot execution:', error);

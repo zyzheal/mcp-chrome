@@ -243,7 +243,28 @@ const isServerReady = ref(false);
 const nativeConnected = ref(false);
 const httpServerRunning = ref(false);
 
-// Poll for connection status
+// Poll interval management with exponential backoff
+const BASE_POLL_INTERVAL = 5000; // 5s when connected
+const MAX_POLL_INTERVAL = 30000; // 30s when disconnected
+let consecutiveFailures = 0;
+let lastPollResult = 'unknown'; // 'running', 'stopped', 'unknown'
+
+/**
+ * Check if user has configured OpenAI direct mode.
+ * When OpenAI is configured and native server is not running,
+ * we skip the HTTP ping to avoid ERR_CONNECTION_REFUSED noise.
+ */
+function hasOpenAIDirectConfig(): boolean {
+  try {
+    const saved = localStorage.getItem('openai_config');
+    if (!saved) return false;
+    const data = JSON.parse(saved);
+    return !!(data.baseUrl && data.apiKey && data.enabled !== false);
+  } catch {
+    return false;
+  }
+}
+
 async function fetchConnectionStatus() {
   try {
     const res: any = await chrome.runtime.sendMessage({
@@ -252,22 +273,38 @@ async function fetchConnectionStatus() {
     if (res?.success) {
       isServerReady.value = res.isServerReady ?? false;
       nativeConnected.value = res.nativeConnected ?? false;
-      // Also check if HTTP server is running by pinging the endpoint
-      const port = res.serverPort || 12306;
-      try {
-        const pingResponse = await fetch(`http://127.0.0.1:${port}/ping`, {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        httpServerRunning.value = pingResponse.ok;
-      } catch {
+
+      const serverRunning = isServerReady.value || nativeConnected.value;
+
+      // Only ping HTTP endpoint if server is running, or if user is NOT in OpenAI direct mode
+      // This avoids ERR_CONNECTION_REFUSED noise when native server is down and OpenAI direct is configured
+      if (serverRunning || !hasOpenAIDirectConfig()) {
+        const port = res.serverPort || 12306;
+        try {
+          const pingResponse = await fetch(`http://127.0.0.1:${port}/ping`, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+          });
+          httpServerRunning.value = pingResponse.ok;
+          consecutiveFailures = 0; // Reset on success
+          lastPollResult = pingResponse.ok ? 'running' : 'stopped';
+        } catch {
+          httpServerRunning.value = false;
+          consecutiveFailures++;
+          lastPollResult = 'stopped';
+        }
+      } else {
+        // Skip ping - native server confirmed down, OpenAI direct mode active
         httpServerRunning.value = false;
+        lastPollResult = 'stopped';
       }
     }
   } catch {
     isServerReady.value = false;
     nativeConnected.value = false;
     httpServerRunning.value = false;
+    consecutiveFailures++;
+    lastPollResult = 'unknown';
   }
 }
 
@@ -275,6 +312,7 @@ const statusClass = computed(() => {
   if (isServerReady.value) return 'status-ready';
   if (httpServerRunning.value && !nativeConnected.value) return 'status-warning';
   if (nativeConnected.value) return 'status-connecting';
+  if (lastPollResult === 'stopped' && hasOpenAIDirectConfig()) return 'status-direct';
   return 'status-disconnected';
 });
 
@@ -282,19 +320,43 @@ const statusText = computed(() => {
   if (isServerReady.value) return 'MCP 已连接';
   if (httpServerRunning.value && !nativeConnected.value) return 'HTTP 服务运行中，Native 未连接';
   if (nativeConnected.value) return '连接中...';
+  if (lastPollResult === 'stopped' && hasOpenAIDirectConfig()) return '未连接 (OpenAI 直连)';
   return '未连接';
 });
 
-let statusInterval: number | null = null;
+let statusTimeout: number | null = null;
+
+/**
+ * Calculate poll interval with exponential backoff.
+ * Fast polling (1s) when recently disconnected to detect server startup quickly.
+ * Slower polling (up to 30s) when persistently disconnected to reduce noise.
+ */
+function getPollInterval(): number {
+  if (consecutiveFailures === 0) return BASE_POLL_INTERVAL;
+  if (consecutiveFailures <= 3) return 5000; // 5s for first few failures
+  if (consecutiveFailures <= 6) return 10000; // 10s
+  return MAX_POLL_INTERVAL; // 30s max
+}
+
+function scheduleNextPoll() {
+  if (statusTimeout) {
+    clearTimeout(statusTimeout);
+  }
+  const interval = getPollInterval();
+  statusTimeout = window.setTimeout(async () => {
+    await fetchConnectionStatus();
+    scheduleNextPoll();
+  }, interval);
+}
 
 onMounted(async () => {
   await fetchConnectionStatus();
-  statusInterval = window.setInterval(fetchConnectionStatus, 5000);
+  scheduleNextPoll();
 });
 
 onUnmounted(() => {
-  if (statusInterval) {
-    clearInterval(statusInterval);
+  if (statusTimeout) {
+    clearTimeout(statusTimeout);
   }
 });
 
@@ -462,6 +524,10 @@ function selectTab(tab: TabType) {
 
 .navigator-status-dot.status-disconnected {
   background: var(--ac-text-subtle, #a8a29e);
+}
+
+.navigator-status-dot.status-direct {
+  background: #3b82f6;
 }
 
 .navigator-status-text {

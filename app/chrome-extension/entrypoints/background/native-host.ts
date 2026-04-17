@@ -759,10 +759,15 @@ export const initNativeHostListener = () => {
     // EXECUTE_TOOL_CALL: Bridge for OpenAI direct mode to call browser tools
     if (message.type === BACKGROUND_MESSAGE_TYPES.EXECUTE_TOOL_CALL) {
       const { toolName, args, requestId } = message.payload || {};
-      console.log(`[NativeHost] EXECUTE_TOOL_CALL: ${toolName} (requestId: ${requestId})`);
+      console.log(`[NativeHost] EXECUTE_TOOL_CALL: ${toolName} (requestId: ${requestId})`, args);
 
       handleCallTool({ name: toolName, args })
         .then((result) => {
+          const isError = result?.isError ?? false;
+          console.log(
+            `[NativeHost] Tool "${toolName}" ${isError ? 'failed' : 'succeeded'}:`,
+            result?.content?.[0]?.text?.substring(0, 200),
+          );
           sendResponse({
             success: true,
             requestId,
@@ -770,6 +775,7 @@ export const initNativeHostListener = () => {
           });
         })
         .catch((error) => {
+          console.error(`[NativeHost] Tool "${toolName}" threw exception:`, error);
           sendResponse({
             success: false,
             requestId,
