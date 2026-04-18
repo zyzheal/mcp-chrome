@@ -1,7 +1,7 @@
 <template>
-  <div class="flex items-center justify-between w-full">
-    <!-- Brand / Context -->
-    <div class="flex items-center gap-2 overflow-hidden -ml-1">
+  <div class="top-bar-root flex items-center">
+    <!-- Left: Brand / Context -->
+    <div ref="leftGroup" class="top-bar-left flex items-center gap-2 shrink-0 -ml-1">
       <!-- Back Button (when in chat view) -->
       <button
         v-if="showBackButton"
@@ -25,7 +25,7 @@
 
       <!-- Brand -->
       <h1
-        class="text-lg font-medium tracking-tight flex-shrink-0"
+        class="text-lg font-medium tracking-tight shrink-0"
         :style="{
           fontFamily: 'var(--ac-font-heading)',
           color: 'var(--ac-text)',
@@ -35,10 +35,7 @@
       </h1>
 
       <!-- Divider -->
-      <div
-        class="h-4 w-[1px] flex-shrink-0"
-        :style="{ backgroundColor: 'var(--ac-border-strong)' }"
-      />
+      <div class="h-4 w-[1px] shrink-0" :style="{ backgroundColor: 'var(--ac-border-strong)' }" />
 
       <!-- Project Breadcrumb -->
       <button
@@ -67,7 +64,7 @@
       </button>
 
       <!-- Session Breadcrumb -->
-      <div class="h-3 w-[1px] flex-shrink-0" :style="{ backgroundColor: 'var(--ac-border)' }" />
+      <div class="h-3 w-[1px] shrink-0" :style="{ backgroundColor: 'var(--ac-border)' }" />
       <button
         class="flex items-center gap-1.5 text-xs px-2 py-1 truncate group ac-btn"
         :style="{
@@ -94,8 +91,13 @@
       </button>
     </div>
 
-    <!-- Connection / Status / Settings -->
-    <div class="flex items-center gap-3">
+    <!-- Center: Clawd Animation -->
+    <div class="top-bar-clawd relative shrink-0">
+      <canvas ref="clawdCanvas" class="clawd-canvas" />
+    </div>
+
+    <!-- Right: Connection / Status / Settings -->
+    <div ref="rightGroup" class="top-bar-right flex items-center gap-3 shrink-0">
       <!-- Connection Indicator -->
       <div class="flex items-center gap-1.5" :title="connectionText">
         <span
@@ -158,7 +160,200 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
+
+const clawdCanvas = ref<HTMLCanvasElement | null>(null);
+const leftGroup = ref<HTMLElement | null>(null);
+const rightGroup = ref<HTMLElement | null>(null);
+let animFrame: number | null = null;
+
+// Clawd body pixels (same as SKILL.md)
+const BODY = [
+  [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+  [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+  [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0],
+  [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+  [0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0],
+  [0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0],
+  [0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0],
+];
+
+const CLAWD_W = 14;
+const CLAWD_H = 8;
+const PX = 3;
+const BODY_CLR = '#CD6E58';
+const EYE_CLR = '#000';
+
+function drawClawd(
+  ctx: CanvasRenderingContext2D,
+  ox: number,
+  oy: number,
+  eyeDl = 0,
+  eyeDr = 0,
+  eyeDy = 0,
+) {
+  for (let r = 0; r < CLAWD_H; r++) {
+    for (let c = 0; c < CLAWD_W; c++) {
+      if (BODY[r][c]) {
+        const isEye = (r === 6 || r === 7) && (c === 4 || c === 9);
+        ctx.fillStyle = isEye ? EYE_CLR : BODY_CLR;
+        ctx.fillRect(ox + c * PX, oy + r * PX, PX, PX);
+      }
+    }
+  }
+  // Eyes with offset
+  const el = { x: 4, y: 1 };
+  const er = { x: 9, y: 1 };
+  ctx.fillStyle = EYE_CLR;
+  if (eyeDl !== 0 || eyeDr !== 0 || eyeDy !== 0) {
+    ctx.fillRect(ox + (el.x + eyeDl) * PX, oy + (el.y + eyeDy) * PX, PX, PX);
+    ctx.fillRect(ox + (er.x + eyeDr) * PX, oy + (er.y + eyeDy) * PX, PX, PX);
+  }
+}
+
+/** Draw Clawd with raised right claw (wave) */
+function drawClawdWave(ctx: CanvasRenderingContext2D, ox: number, oy: number, waveUp: number) {
+  drawClawd(ctx, ox, oy);
+  const clawPixels =
+    waveUp > 0.5
+      ? [
+          [13, -2],
+          [14, -3],
+          [14, -2],
+        ]
+      : [
+          [13, -1],
+          [14, -2],
+        ];
+  ctx.fillStyle = BODY_CLR;
+  for (const [cx, cy] of clawPixels) {
+    ctx.fillRect(ox + cx * PX, oy + cy * PX, PX, PX);
+  }
+}
+
+/** Draw door edge indicator */
+function drawDoorEdge(ctx: CanvasRenderingContext2D, x: number, h: number) {
+  ctx.fillStyle = 'rgba(0,0,0,0.06)';
+  ctx.fillRect(x, 0, 1, h);
+}
+
+function easeInOut(t: number) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function easeOut(t: number) {
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function startAnimation() {
+  const canvas = clawdCanvas.value;
+  if (!canvas) return;
+
+  const clawdStage = canvas.parentElement;
+  if (!clawdStage) return;
+
+  const rect = clawdStage.getBoundingClientRect();
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio));
+  canvas.width = Math.round(rect.width * dpr);
+  canvas.height = Math.round(rect.height * dpr);
+
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const clawdPxH = CLAWD_H * PX; // 24
+  const clawdPxW = CLAWD_W * PX; // 42
+  const baseY = Math.round((H - clawdPxH) / 2); // center vertically
+
+  const TOTAL_DUR = 10;
+  const PHASE_DUR = TOTAL_DUR / 3;
+  let startTime: number | null = null;
+
+  function render(ts: number) {
+    if (!startTime) startTime = ts;
+    const elapsed = ((ts - startTime) / 1000) % TOTAL_DUR;
+    const phaseIdx = Math.floor(elapsed / PHASE_DUR);
+    const pt = (elapsed - phaseIdx * PHASE_DUR) / PHASE_DUR;
+
+    ctx.clearRect(0, 0, W, H);
+
+    if (phaseIdx === 0) {
+      // ═══ PHASE 0: Peek-a-boo ═══
+      let showAmount: number;
+      if (pt < 0.3) {
+        showAmount = easeOut(pt / 0.3);
+      } else if (pt < 0.7) {
+        showAmount = 1 + Math.sin(((pt - 0.3) / 0.4) * Math.PI * 2) * 0.1;
+      } else {
+        showAmount = 1 - easeInOut((pt - 0.7) / 0.3);
+      }
+      const offsetY = (1 - showAmount) * clawdPxH;
+      const ox = Math.round((W - clawdPxW) / 2);
+      const oy = baseY + offsetY;
+      const eyeDy = showAmount < 0.5 ? -1 : 0;
+      drawClawd(ctx, ox, oy, 0, 0, eyeDy);
+    } else if (phaseIdx === 1) {
+      // ═══ PHASE 1: Wave (举手挥舞) ═══
+      const ox = Math.round((W - clawdPxW) / 2);
+      const oy = baseY;
+      const bounce = Math.round(Math.sin(pt * Math.PI * 2) * 1);
+
+      if (pt < 0.15) {
+        drawClawdWave(ctx, ox, oy + bounce, easeOut(pt / 0.15));
+      } else if (pt < 0.85) {
+        const waveCycle = (pt - 0.15) / 0.7;
+        const waveUp = (Math.sin(waveCycle * Math.PI * 2) + 1) / 2;
+        drawClawdWave(ctx, ox, oy + bounce, 0.5 + waveUp * 0.5);
+      } else {
+        drawClawdWave(ctx, ox, oy, 1 - easeInOut((pt - 0.85) / 0.15));
+      }
+    } else {
+      // ═══ PHASE 2: Door edge peek (藏一半身子在门口) ═══
+      const edgeX = W - clawdPxW / 2;
+      let hideProgress: number;
+      if (pt < 0.25) {
+        hideProgress = easeInOut(pt / 0.25);
+      } else if (pt < 0.7) {
+        const peekT = (pt - 0.25) / 0.45;
+        hideProgress = 1 - Math.sin(peekT * Math.PI) * 0.6;
+      } else {
+        hideProgress = 1 - easeOut((pt - 0.7) / 0.3);
+      }
+
+      const centerX = (W - clawdPxW) / 2;
+      const targetX = edgeX - clawdPxW;
+      const ox = Math.round(centerX + (targetX - centerX) * hideProgress);
+      const oy = baseY;
+
+      drawDoorEdge(ctx, edgeX, H);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(0, 0, edgeX, H);
+      ctx.clip();
+      drawClawd(ctx, ox, oy, -1, 1, 0);
+      ctx.restore();
+    }
+
+    animFrame = requestAnimationFrame(render);
+  }
+
+  animFrame = requestAnimationFrame(render);
+}
+
+onMounted(() => {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      startAnimation();
+    });
+  });
+});
+
+onUnmounted(() => {
+  if (animFrame) cancelAnimationFrame(animFrame);
+});
 
 export type ConnectionState = 'ready' | 'connecting' | 'disconnected';
 
@@ -166,9 +361,7 @@ const props = defineProps<{
   projectLabel: string;
   sessionLabel: string;
   connectionState: ConnectionState;
-  /** Whether to show back button (for returning to sessions list) */
   showBackButton?: boolean;
-  /** Brand label to display (e.g., "Claude Code", "Codex") */
   brandLabel?: string;
 }>();
 
@@ -177,7 +370,6 @@ defineEmits<{
   'toggle:sessionMenu': [];
   'toggle:settingsMenu': [];
   'toggle:openProjectMenu': [];
-  /** Emitted when back button is clicked */
   back: [];
 }>();
 
@@ -203,3 +395,33 @@ const connectionText = computed(() => {
   }
 });
 </script>
+
+<style scoped>
+.top-bar-root {
+  width: 100%;
+  height: 40px;
+}
+
+.top-bar-left {
+  max-width: 55%;
+  min-width: 0;
+}
+
+.top-bar-clawd {
+  width: 120px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.clawd-canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.top-bar-right {
+  min-width: 0;
+}
+</style>
